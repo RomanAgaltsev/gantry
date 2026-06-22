@@ -14,6 +14,7 @@ type Config struct {
 	Connections  map[string]Connection `yaml:"connections"`
 	Components   []Component           `yaml:"components"`
 	Environments []Environment         `yaml:"environments"`
+	Registries   map[string]Registry   `yaml:"registries"`
 }
 
 // ForgeConfig selects and configures the forge adapter.
@@ -65,6 +66,12 @@ type ExecutorConfig struct {
 	ProjectDir   string   `yaml:"project_dir"`
 	ComposeFiles []string `yaml:"compose_files"`
 	EnvFile      string   `yaml:"env_file"`
+}
+
+// Registry holds credentials for one container registry host.
+type Registry struct {
+	User     SecretRef `yaml:"user"`
+	Password SecretRef `yaml:"password"`
 }
 
 // Environment returns the named environment.
