@@ -1,0 +1,13 @@
+version: "3"
+tasks:
+  build:
+    {
+      cmds:
+        [
+          'go build -ldflags "-X github.com/RomanAgaltsev/gantry/internal/cli.Version={{.VERSION}}" -o gantry ./cmd/gantry',
+        ],
+      vars: { VERSION: '{{.VERSION | default "dev"}}' },
+    }
+  test: { cmds: ["go test ./..."] }
+  lint: { cmds: ["golangci-lint run"] }
+  tidy: { cmds: ["go mod tidy"] }
