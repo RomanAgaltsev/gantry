@@ -41,6 +41,46 @@ func (e *fakeExec) Deploy(_ context.Context, p executor.Plan) (executor.Result, 
 	return executor.Result{Changed: true}, nil
 }
 
+type failExec struct{}
+
+func (e *failExec) Deploy(context.Context, executor.Plan) (executor.Result, error) {
+	return executor.Result{}, errString("ssh down")
+}
+
+type errString string
+
+func (e errString) Error() string { return string(e) }
+
+func TestSync_DeployFailureSurfacesRecoveryPath(t *testing.T) {
+	f := fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v2"}}
+	store := &fakeStore{cur: pin.Set{"SVC_IMAGE": "reg/svc:v1"}}
+
+	_, err := Sync(context.Background(), cfg(), "test", f, &failExec{}, store, SyncOptions{})
+	require.Error(t, err)
+	// Pins were committed; the message must tell the operator how to recover.
+	require.NotNil(t, store.committed)
+	require.ErrorContains(t, err, "gantry deploy")
+}
+
+func TestSync_NilExecutorErrorsNotPanics(t *testing.T) {
+	f := fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v2"}}
+	store := &fakeStore{cur: pin.Set{"SVC_IMAGE": "reg/svc:v1"}}
+
+	_, err := Sync(context.Background(), cfg(), "test", f, nil, store, SyncOptions{})
+	require.ErrorContains(t, err, "no executor")
+	require.Nil(t, store.committed) // bailed before committing
+}
+
+func TestDeploy_NilExecutorErrorsNotPanics(t *testing.T) {
+	store := &fakeStore{cur: pin.Set{"SVC_IMAGE": "reg/svc:v1"}}
+	c := &config.Config{Environments: []config.Environment{{
+		Name: "test", Source: config.Source{Track: "latest"}, PinFile: ".env.versions.test",
+	}}}
+
+	_, err := Deploy(context.Background(), c, "test", nil, store)
+	require.ErrorContains(t, err, "no executor")
+}
+
 func cfg() *config.Config {
 	return &config.Config{
 		Components: []config.Component{{ID: "svc", Project: "g/svc", PinKey: "SVC_IMAGE"}},

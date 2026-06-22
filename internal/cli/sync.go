@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -16,8 +15,6 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/forge/gitlab"
 	"github.com/RomanAgaltsev/gantry/internal/pin"
 )
-
-func jsonMarshal(v any) ([]byte, error) { return json.Marshal(v) }
 
 type deps struct {
 	cfg   *config.Config
@@ -85,7 +82,8 @@ func buildDeps(cmd *cobra.Command, envName string, needExec bool) (*deps, error)
 	}
 
 	// Pin files are tracked in the git repo alongside gantry.yaml.
-	store, err := engine.NewGitStore(filepath.Dir(path), object.Signature{Name: "gantry", Email: "gantry@local"})
+	store, err := engine.NewGitStore(filepath.Dir(path),
+		object.Signature{Name: cfg.Git.AuthorName, Email: cfg.Git.AuthorEmail})
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -14,6 +15,9 @@ import (
 type sshRunner struct {
 	addr   string
 	config *ssh.ClientConfig
+
+	mu     sync.Mutex
+	client *ssh.Client // dialed lazily, reused across Run calls
 }
 
 // NewSSHRunner builds a Runner that executes commands over SSH using a private key.
@@ -41,18 +45,10 @@ func NewSSHRunner(addr, user, privateKey, knownHosts string) (Runner, error) {
 }
 
 func (r *sshRunner) Run(ctx context.Context, cmd string, stdin []byte) (string, error) {
-	d := net.Dialer{}
-	conn, err := d.DialContext(ctx, "tcp", withDefaultPort(r.addr))
+	client, err := r.dial(ctx)
 	if err != nil {
 		return "", err
 	}
-	c, chans, reqs, err := ssh.NewClientConn(conn, withDefaultPort(r.addr), r.config)
-	if err != nil {
-		return "", err
-	}
-	client := ssh.NewClient(c, chans, reqs)
-	defer func() { _ = client.Close() }()
-
 	sess, err := client.NewSession()
 	if err != nil {
 		return "", err
@@ -63,6 +59,29 @@ func (r *sshRunner) Run(ctx context.Context, cmd string, stdin []byte) (string, 
 	}
 	out, err := sess.CombinedOutput(cmd)
 	return string(out), err
+}
+
+// dial returns a connected SSH client, dialing once and caching it so a deploy's
+// several commands (env write, login, pull, up) share one TCP+SSH handshake. The
+// client lives for the process lifetime; gantry is a short-lived CLI, so it is
+// closed by process exit rather than an explicit Close.
+func (r *sshRunner) dial(ctx context.Context) (*ssh.Client, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.client != nil {
+		return r.client, nil
+	}
+	d := net.Dialer{}
+	conn, err := d.DialContext(ctx, "tcp", withDefaultPort(r.addr))
+	if err != nil {
+		return nil, err
+	}
+	c, chans, reqs, err := ssh.NewClientConn(conn, withDefaultPort(r.addr), r.config)
+	if err != nil {
+		return nil, err
+	}
+	r.client = ssh.NewClient(c, chans, reqs)
+	return r.client, nil
 }
 
 func withDefaultPort(addr string) string {

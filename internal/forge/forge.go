@@ -25,8 +25,17 @@ type Release struct {
 	BuiltAt          time.Time
 }
 
-// ImageRef is the immutable reference an environment pins: "repository:tag".
-func (r Release) ImageRef() string { return r.ImageRepository + ":" + r.ImageTag }
+// ImageRef is the immutable reference an environment pins. When the release
+// metadata carries a digest, it is pinned as "repository:tag@sha256:…" so the
+// pulled image cannot drift if the tag is later re-pushed; the readable tag is
+// retained alongside the digest. Without a digest it falls back to "repository:tag".
+func (r Release) ImageRef() string {
+	ref := r.ImageRepository + ":" + r.ImageTag
+	if r.ImageDigest != "" {
+		ref += "@" + r.ImageDigest
+	}
+	return ref
+}
 
 // Forge reads releases for components.
 type Forge interface {

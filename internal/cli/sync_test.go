@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -32,6 +33,32 @@ func TestPlanCommand_ReportsPendingChange(t *testing.T) {
 	require.Contains(t, out.String(), "reg/svc:v2")
 }
 
+// An SSH-less connection used to slip past validation and panic at deploy time
+// (nil executor). It must now fail cleanly at config load with an "ssh" error.
+func TestDeployCommand_SSHlessConnectionFailsCleanly(t *testing.T) {
+	t.Setenv("GANTRY_FORGE_TOKEN", "tok")
+	dir := initRepo(t)
+	cfgPath := filepath.Join(dir, "gantry.yaml")
+	cfg := `
+forge: { kind: gitlab, base_url: http://127.0.0.1:1, token: "${env:GANTRY_FORGE_TOKEN}" }
+connections: { h: { address: 1.1.1.1 } }
+components: [{ id: svc, project: g/svc, pin_key: SVC_IMAGE }]
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    executor: { kind: compose-over-ssh, connection: h, project_dir: /opt/app, env_file: .env.versions.test }
+`
+	require.NoError(t, os.WriteFile(cfgPath, []byte(cfg), 0o600))
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--config", cfgPath, "deploy", "--env", "test"})
+	err := cmd.Execute()
+	require.ErrorContains(t, err, "ssh") // clean error, not a panic
+}
+
 func startFakeGitLab(t *testing.T) *httptest.Server {
 	t.Helper()
 	body := "<!-- gantry-release-metadata:v1:start -->\n```json\n" +
@@ -39,7 +66,7 @@ func startFakeGitLab(t *testing.T) *httptest.Server {
 		`"image_repository":"reg/svc","image_tag":"v2","image_digest":"sha256:d",` +
 		`"commit_sha":"c","built_at":"2026-06-18T09:00:00Z","changelog_section":"x"}` +
 		"\n```\n<!-- gantry-release-metadata:v1:end -->"
-	mb, _ := jsonMarshal(body)
+	mb, _ := json.Marshal(body)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`[{"tag_name":"v2","description":` + string(mb) + `}]`))
 	}))
@@ -50,14 +77,16 @@ func startFakeGitLab(t *testing.T) *httptest.Server {
 func initRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env.versions.test"), []byte("SVC_IMAGE=reg/svc:v1\n"), 0o644))
+	// Commit the pin file: gantry reads the committed (HEAD) state, not the worktree.
 	for _, args := range [][]string{
 		{"init"}, {"config", "user.email", "t@example.com"}, {"config", "user.name", "t"},
+		{"add", ".env.versions.test"}, {"commit", "-m", "seed pin file"},
 	} {
 		c := exec.Command("git", args...)
 		c.Dir = dir
 		require.NoError(t, c.Run())
 	}
-	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env.versions.test"), []byte("SVC_IMAGE=reg/svc:v1\n"), 0o644))
 	return dir
 }
 

@@ -75,7 +75,7 @@ connections: { h: { address: 1.1.1.1 } }
 
 const explicitCfg = `
 forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
-connections: { h: { address: 1.1.1.1 } }
+connections: { h: { address: 1.1.1.1, ssh: { user: x, key: "${env:T}" } } }
 components:
   - { id: svc, project: g/svc, pin_key: SVC_IMAGE }
   - id: postgres
@@ -113,6 +113,28 @@ environments:
 `
 	_, err := Load(writeCfg(t, bad))
 	require.ErrorContains(t, err, "project")
+}
+
+func TestLoad_ComposeConnectionRequiresSSH(t *testing.T) {
+	bad := `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+connections: { h: { address: 1.1.1.1 } }
+components: [{ id: svc, project: g/svc, pin_key: SVC_IMAGE }]
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    executor: { kind: compose-over-ssh, connection: h, project_dir: /o }
+`
+	_, err := Load(writeCfg(t, bad))
+	require.ErrorContains(t, err, "ssh")
+}
+
+func TestLoad_GitIdentityDefaults(t *testing.T) {
+	c, err := Load(writeCfg(t, goodCfg))
+	require.NoError(t, err)
+	require.Equal(t, "gantry", c.Git.AuthorName)
+	require.Equal(t, "gantry@local", c.Git.AuthorEmail)
 }
 
 func TestLoad_ForgeReleaseRequiresProject(t *testing.T) {
