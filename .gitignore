@@ -1,0 +1,4 @@
+/gantry
+/dist
+*.out
+.env.versions.*
