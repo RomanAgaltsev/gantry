@@ -1,0 +1,31 @@
+package cli
+
+import (
+	"github.com/RomanAgaltsev/gantry/internal/engine"
+	"github.com/spf13/cobra"
+)
+
+func newDeployCmd() *cobra.Command {
+	var envName string
+	cmd := &cobra.Command{
+		Use:   "deploy",
+		Short: "Reconcile an environment to its current committed pin file",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			d, err := buildDeps(cmd, envName, true)
+			if err != nil {
+				return err
+			}
+			res, err := engine.Deploy(cmd.Context(), d.cfg, d.env, d.exec, d.store)
+			if err != nil {
+				return err
+			}
+			if res.Deployed {
+				cmd.Printf("deployed %d pin(s) to %s\n", len(res.Pins), envName)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&envName, "env", "", "environment name")
+	_ = cmd.MarkFlagRequired("env")
+	return cmd
+}
