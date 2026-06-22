@@ -40,10 +40,17 @@ type SSHConn struct {
 
 // Component is a buildable repo whose image is pinned.
 type Component struct {
-	ID      string `yaml:"id"`
-	Project string `yaml:"project"`
-	PinKey  string `yaml:"pin_key"`
+	ID      string          `yaml:"id"`
+	Project string          `yaml:"project"`
+	PinKey  string          `yaml:"pin_key"`
+	Source  ComponentSource `yaml:"source"`
 }
+
+// IsExplicit reports whether the component's pin is maintained in the pin file.
+func (c Component) IsExplicit() bool { return c.Source.Pin == "explicit" }
+
+// IsForgeRelease reports whether the component's pin is derived from a Release.
+func (c Component) IsForgeRelease() bool { return c.Source.Forge == "release" }
 
 // Environment is one deploy target environment.
 type Environment struct {
@@ -74,6 +81,14 @@ type Registry struct {
 	Password SecretRef `yaml:"password"`
 }
 
+// ComponentSource declares how a component's desired pin is resolved:
+// {forge: release} = derived by the poller from the latest Release (default);
+// {pin: explicit}  = maintained directly in the pin file by a human/Renovate.
+type ComponentSource struct {
+	Forge string `yaml:"forge"`
+	Pin   string `yaml:"pin"`
+}
+
 // Environment returns the named environment.
 func (c *Config) Environment(name string) (*Environment, bool) {
 	for i := range c.Environments {
@@ -97,6 +112,14 @@ func Load(path string) (*Config, error) {
 	if c.Forge.MetadataMarker == "" {
 		c.Forge.MetadataMarker = "gantry-release-metadata"
 	}
+
+	for i := range c.Components {
+		s := &c.Components[i].Source
+		if s.Forge == "" && s.Pin == "" {
+			s.Forge = "release"
+		}
+	}
+
 	if err := c.validate(); err != nil {
 		return nil, err
 	}
@@ -116,6 +139,21 @@ func (c *Config) validate() error {
 			return fmt.Errorf("duplicate pin_key %q", comp.PinKey)
 		}
 		seen[comp.PinKey] = true
+		if comp.Source.Forge != "" && comp.Source.Pin != "" {
+			return fmt.Errorf("component %q: source must set exactly one of forge/pin", comp.ID)
+		}
+		if comp.Source.Pin != "" && comp.Source.Pin != "explicit" {
+			return fmt.Errorf("component %q: unsupported source.pin %q (want \"explicit\")", comp.ID, comp.Source.Pin)
+		}
+		if comp.Source.Forge != "" && comp.Source.Forge != "release" {
+			return fmt.Errorf("component %q: unsupported source.forge %q (want \"release\")", comp.ID, comp.Source.Forge)
+		}
+		if comp.IsExplicit() && comp.Project != "" {
+			return fmt.Errorf("component %q: explicit-pin component must not set project", comp.ID)
+		}
+		if comp.IsForgeRelease() && comp.Project == "" {
+			return fmt.Errorf("component %q: forge-release component requires project", comp.ID)
+		}
 	}
 	for _, env := range c.Environments {
 		if env.Source.Track == "" && env.Source.PromoteFrom == "" {

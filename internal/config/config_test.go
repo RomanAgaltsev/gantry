@@ -72,3 +72,61 @@ connections: { h: { address: 1.1.1.1 } }
 	_, err := Load(writeCfg(t, bad))
 	require.ErrorContains(t, err, "source")
 }
+
+const explicitCfg = `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+connections: { h: { address: 1.1.1.1 } }
+components:
+  - { id: svc, project: g/svc, pin_key: SVC_IMAGE }
+  - id: postgres
+    pin_key: POSTGRES_IMAGE
+    source: { pin: explicit }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    executor: { kind: compose-over-ssh, connection: h, project_dir: /o }
+`
+
+func TestLoad_ExplicitComponent(t *testing.T) {
+	c, err := Load(writeCfg(t, explicitCfg))
+	require.NoError(t, err)
+	require.True(t, c.Components[0].IsForgeRelease()) // svc defaulted
+	require.False(t, c.Components[0].IsExplicit())
+	require.True(t, c.Components[1].IsExplicit()) // postgres
+}
+
+func TestLoad_ExplicitWithProjectRejected(t *testing.T) {
+	bad := `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+connections: { h: { address: 1.1.1.1 } }
+components:
+  - id: postgres
+    project: oops
+    pin_key: POSTGRES_IMAGE
+    source: { pin: explicit }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    executor: { kind: compose-over-ssh, connection: h, project_dir: /o }
+`
+	_, err := Load(writeCfg(t, bad))
+	require.ErrorContains(t, err, "project")
+}
+
+func TestLoad_ForgeReleaseRequiresProject(t *testing.T) {
+	bad := `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+connections: { h: { address: 1.1.1.1 } }
+components:
+  - { id: svc, pin_key: SVC_IMAGE }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    executor: { kind: compose-over-ssh, connection: h, project_dir: /o }
+`
+	_, err := Load(writeCfg(t, bad))
+	require.ErrorContains(t, err, "project")
+}
