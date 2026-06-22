@@ -15,6 +15,14 @@ type Config struct {
 	Components   []Component           `yaml:"components"`
 	Environments []Environment         `yaml:"environments"`
 	Registries   map[string]Registry   `yaml:"registries"`
+	Git          GitConfig             `yaml:"git"`
+}
+
+// GitConfig sets the identity gantry stamps on the pin commits it makes.
+// Both fields default (see Load) so the block is optional.
+type GitConfig struct {
+	AuthorName  string `yaml:"author_name"`
+	AuthorEmail string `yaml:"author_email"`
 }
 
 // ForgeConfig selects and configures the forge adapter.
@@ -112,6 +120,12 @@ func Load(path string) (*Config, error) {
 	if c.Forge.MetadataMarker == "" {
 		c.Forge.MetadataMarker = "gantry-release-metadata"
 	}
+	if c.Git.AuthorName == "" {
+		c.Git.AuthorName = "gantry"
+	}
+	if c.Git.AuthorEmail == "" {
+		c.Git.AuthorEmail = "gantry@local"
+	}
 
 	for i := range c.Components {
 		s := &c.Components[i].Source
@@ -167,8 +181,13 @@ func (c *Config) validate() error {
 		if env.Executor.Kind != "compose-over-ssh" {
 			return fmt.Errorf("environment %q: unsupported executor.kind %q (slice 1: compose-over-ssh)", env.Name, env.Executor.Kind)
 		}
-		if _, ok := c.Connections[env.Executor.Connection]; !ok {
+		conn, ok := c.Connections[env.Executor.Connection]
+		if !ok {
 			return fmt.Errorf("environment %q: connection %q not found", env.Name, env.Executor.Connection)
+		}
+		if env.Executor.Kind == "compose-over-ssh" && conn.SSH == nil {
+			return fmt.Errorf("environment %q: connection %q requires an ssh block for compose-over-ssh",
+				env.Name, env.Executor.Connection)
 		}
 	}
 	return nil

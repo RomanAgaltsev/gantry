@@ -131,6 +131,17 @@ recorded it:
 
 If nothing changed, `sync` is a no-op: no commit, no deploy.
 
+> **Push the commit.** gantry commits the updated pin file to the **local** git
+> tree; it does not push. For the version history to survive and for `deploy` or
+> promotion on another machine to see the change, push it yourself — in CI, add a
+> `git push` after `sync`. The commit identity is configurable via the
+> [`git` block](configuration.md#git).
+
+> **If the deploy step fails** after the pins were committed, a re-`sync` sees no
+> diff and won't retry. Run `gantry deploy --env test` to reconcile the host to the
+> committed pin file (gantry's `sync` error tells you this too). See
+> [Recovering a `sync` whose deploy failed](configuration.md#recovering-a-sync-whose-deploy-failed).
+
 ## 6. Status
 
 `status` compares the currently pinned image of each component against the latest

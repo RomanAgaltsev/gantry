@@ -71,12 +71,20 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 		return SyncResult{Changes: changes}, nil
 	}
 
+	if ex == nil {
+		return SyncResult{}, fmt.Errorf("no executor configured for environment %q", envName)
+	}
+
 	msg := commitMessage(envName, changes)
 	if err := store.WriteAndCommit(env.PinFile, merged, msg); err != nil {
 		return SyncResult{}, err
 	}
 	if _, err := ex.Deploy(ctx, executor.Plan{Env: envName, PinFile: env.PinFile, Pins: merged}); err != nil {
-		return SyncResult{Changes: changes}, err
+		// The new pins are already committed but not deployed: a plain re-`sync`
+		// sees no diff and won't retry. Make the drift recoverable by hand.
+		return SyncResult{Changes: changes}, fmt.Errorf(
+			"deploy failed after committing pins for %q; run `gantry deploy --env %s` to retry: %w",
+			envName, envName, err)
 	}
 	return SyncResult{Changes: changes, Deployed: true}, nil
 }
@@ -111,6 +119,9 @@ func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor
 	}
 	if len(pins) == 0 {
 		return DeployResult{}, fmt.Errorf("pin file %q is empty; nothing to deploy", env.PinFile)
+	}
+	if ex == nil {
+		return DeployResult{}, fmt.Errorf("no executor configured for environment %q", envName)
 	}
 	if _, err := ex.Deploy(ctx, executor.Plan{Env: envName, PinFile: env.PinFile, Pins: pins}); err != nil {
 		return DeployResult{}, err

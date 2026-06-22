@@ -29,7 +29,7 @@ func TestLatestRelease(t *testing.T) {
 	c := New(srv.URL, "tok", "gantry-release-metadata", srv.Client())
 	rel, err := c.LatestRelease(context.Background(), forge.Component{ID: "svc", Project: "grp/svc", PinKey: "SVC_IMAGE"})
 	require.NoError(t, err)
-	require.Equal(t, "reg/svc:v1.2.0", rel.ImageRef())
+	require.Equal(t, "reg/svc:v1.2.0@sha256:d", rel.ImageRef())
 }
 
 func TestLatestRelease_NoReleases(t *testing.T) {

@@ -18,7 +18,9 @@ world — config-driven, with no system-specific logic baked in.
 ## Current capabilities
 
 - **Consume** the latest GitLab Release of each component and parse its embedded
-  release-metadata block (immutable `repository:tag`, digest, commit, changelog).
+  release-metadata block (`repository:tag`, digest, commit, changelog). When the
+  metadata carries a digest, the pin is written as `repository:tag@sha256:…` so the
+  pulled image cannot drift if the tag is later re-pushed.
 - **Pin** the resolved image references into a per-environment dotenv file and
   commit the change to git — but only when the pin actually differs (commit-on-diff;
   re-runs are no-ops).
@@ -69,4 +71,4 @@ environment. Planned next:
 
 ## License
 
-See the repository for license details.
+Released under the [MIT License](LICENSE).

@@ -15,6 +15,7 @@ connections:  { <name>: { ... } } # named deploy targets (inventory)
 components:   [ { ... } ]         # the buildable repos whose images are pinned
 environments: [ { ... } ]         # deploy-target environments
 registries:   { <host>: { ... } } # optional — private registry credentials
+git:          { ... }            # optional — identity for the pin commits gantry makes
 ```
 
 ## `forge`
@@ -54,6 +55,11 @@ embed a metadata block delimited by the configured marker:
 `image_repository` and `image_tag` are required; `built_at` must be RFC 3339. A
 release with a missing or invalid metadata block is a **hard error** — gantry never
 silently skips a release.
+
+When `image_digest` is present, gantry pins the **digest** alongside the tag —
+`repository:tag@sha256:…` — so a later re-push of the same tag cannot change the
+image a host pulls. Without a digest it falls back to a tag-only `repository:tag`
+pin (mutable; only as strong as the tag).
 
 ## `connections`
 
@@ -211,6 +217,28 @@ path segment is the host if it contains `.` or `:` or equals `localhost`; otherw
 the image lives on `docker.io`. For example `gitlab.example.com:5050/g/s:v1` →
 `gitlab.example.com:5050`, while `postgres:16.4` → `docker.io`.
 
+## `git`
+
+Optional. Sets the author/committer identity stamped on the pin commits gantry
+makes (its timestamp is always the moment of the commit). Both fields default, so
+the whole block can be omitted.
+
+```yaml
+git:
+  author_name: gantry-bot
+  author_email: gantry@example.com
+```
+
+| Field          | Type   | Default        | Description |
+|----------------|--------|----------------|-------------|
+| `author_name`  | string | `gantry`       | Name recorded on pin commits. |
+| `author_email` | string | `gantry@local` | Email recorded on pin commits. |
+
+> gantry commits the pin file **locally**; it does not push. In CI the runner must
+> push the commit (e.g. `git push`) for the pin history to survive and for `deploy`
+> or promotion on another machine to see it. See
+> [getting-started](getting-started.md#5-sync-pin--deploy).
+
 ## SecretRef
 
 Every credential field (`forge.token`, `ssh.key`, `ssh.known_hosts`, `registries.*.user`,
@@ -256,3 +284,17 @@ committed. Run it after the pin file changes through a means other than `sync`:
 
 It writes the pin set to the host's env file, logs in to any referenced private
 registries, and runs `docker compose pull` then `up -d`.
+
+#### Recovering a `sync` whose deploy failed
+
+`sync` commits the new pins **before** deploying. If the deploy step then fails, the
+pins are already committed, so a plain re-`sync` sees no diff and will **not** retry
+the deploy — the environment is behind its own committed pin file. gantry's `sync`
+error says so explicitly and tells you to run:
+
+```bash
+gantry deploy --env <name>
+```
+
+`deploy` reconciles the host to the committed pin file and is the supported recovery
+path (it is also what CI runs after a Renovate/manual bump or a promotion commit).

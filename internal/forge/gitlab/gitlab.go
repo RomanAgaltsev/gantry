@@ -8,9 +8,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/RomanAgaltsev/gantry/internal/forge"
 )
+
+// defaultTimeout bounds a single forge HTTP call so a hung/black-holed GitLab
+// can't make gantry hang forever (it is typically run unattended in CI).
+const defaultTimeout = 30 * time.Second
 
 // Client reads GitLab Releases for components.
 type Client struct {
@@ -20,10 +25,11 @@ type Client struct {
 	hc      *http.Client
 }
 
-// New builds a GitLab forge client. If hc is nil, http.DefaultClient is used.
+// New builds a GitLab forge client. If hc is nil, a client with a sane request
+// timeout (defaultTimeout) is used so calls can't hang indefinitely.
 func New(baseURL, token, marker string, hc *http.Client) *Client {
 	if hc == nil {
-		hc = http.DefaultClient
+		hc = &http.Client{Timeout: defaultTimeout}
 	}
 	return &Client{baseURL: baseURL, token: token, marker: marker, hc: hc}
 }
