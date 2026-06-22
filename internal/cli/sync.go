@@ -47,6 +47,19 @@ func buildDeps(cmd *cobra.Command, envName string, needExec bool) (*deps, error)
 	}
 	f := gitlab.New(cfg.Forge.BaseURL, token, cfg.Forge.MetadataMarker, nil)
 
+	var logins []composessh.RegistryLogin
+	for host, reg := range cfg.Registries {
+		u, err := res.Resolve(reg.User)
+		if err != nil {
+			return nil, err
+		}
+		pw, err := res.Resolve(reg.Password)
+		if err != nil {
+			return nil, err
+		}
+		logins = append(logins, composessh.RegistryLogin{Registry: host, Username: u, Password: pw})
+	}
+
 	conn := cfg.Connections[env.Executor.Connection]
 	var ex executor.Executor
 	if needExec && conn.SSH != nil {
@@ -63,8 +76,11 @@ func buildDeps(cmd *cobra.Command, envName string, needExec bool) (*deps, error)
 			return nil, err
 		}
 		ex = &composessh.Executor{
-			Runner: runner, ProjectDir: env.Executor.ProjectDir,
-			ComposeFiles: env.Executor.ComposeFiles, EnvFile: env.Executor.EnvFile,
+			Runner:       runner,
+			ProjectDir:   env.Executor.ProjectDir,
+			ComposeFiles: env.Executor.ComposeFiles,
+			EnvFile:      env.Executor.EnvFile,
+			Logins:       logins,
 		}
 	}
 
