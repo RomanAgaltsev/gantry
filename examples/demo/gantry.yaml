@@ -13,6 +13,7 @@ connections:
 components:
   - { id: api, project: demo/api, pin_key: API_IMAGE }
   - { id: web, project: demo/web, pin_key: WEB_IMAGE }
+  - { id: postgres, pin_key: POSTGRES_IMAGE, source: { pin: explicit } }
 environments:
   - name: test
     source: { track: latest }

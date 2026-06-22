@@ -81,21 +81,52 @@ connections:
 
 ## `components`
 
-The list of buildable repos whose images are pinned.
+The list of components whose images are pinned. A component is either *forge-tracked*
+(its image is derived from the latest forge Release) or *explicit-pin* (its image is
+maintained directly in the pin file), selected by `source`.
 
 ```yaml
 components:
   - { id: api, project: demo/api, pin_key: API_IMAGE }
   - { id: web, project: demo/web, pin_key: WEB_IMAGE }
+  - { id: postgres, pin_key: POSTGRES_IMAGE, source: { pin: explicit } }
 ```
 
-| Field     | Type   | Required | Description |
-|-----------|--------|----------|-------------|
-| `id`      | string | yes      | Human-readable identifier for the component. |
-| `project` | string | yes      | Forge project path (e.g. `group/repo`) or numeric ID. |
-| `pin_key` | string | yes      | The dotenv key the resolved `repository:tag` is written under. Must be unique across components. |
+| Field     | Type            | Required | Description |
+|-----------|-----------------|----------|-------------|
+| `id`      | string          | yes      | Human-readable identifier for the component. |
+| `project` | string          | cond.    | Forge project path (e.g. `group/repo`) or numeric ID. **Required** for forge-tracked components; **must be absent** for explicit-pin ones. |
+| `pin_key` | string          | yes      | The dotenv key the resolved `repository:tag` is written under. Must be unique across components. |
+| `source`  | ComponentSource | no       | How the component's pin is resolved. Defaults to `{ forge: release }`. See below. |
 
 A duplicate `pin_key` is a validation error.
+
+### `source` (component)
+
+Discriminates how a component's desired image pin is resolved.
+
+| Form                     | Meaning |
+|--------------------------|---------|
+| `{ forge: release }`     | **Default.** The image is derived by the poller from the component's latest forge Release. Requires `project`. Tracked by `sync` and `status`. |
+| `{ pin: explicit }`      | The image is maintained directly in the pin file (by hand or Renovate). gantry never reads a registry or overwrites it. Must **not** set `project`. |
+
+Validation:
+
+- Setting both `forge` and `pin` is an error — choose exactly one.
+- The only accepted values are `forge: release` and `pin: explicit`.
+- A forge-release component **requires** `project`; an explicit-pin component must
+  **not** set `project`.
+
+Behavior of an explicit-pin component:
+
+- **`gantry sync` skips it** — the poller never reads a registry to choose its version
+  and never overwrites its pin (passive, single-writer). Its existing pin is carried
+  forward unchanged.
+- **`gantry status` shows `latest=(untracked)`** for it, since there is no forge
+  release to compare against.
+- **`gantry deploy`** does include it: deploy reconciles the *whole* committed pin
+  file regardless of source (see [Commands](#commands)). This is the path to run after
+  a Renovate or manual bump of an explicit pin.
 
 ## `environments`
 
@@ -200,3 +231,28 @@ token: ${env:GANTRY_FORGE_TOKEN}      # OK
 key:   ${file:/run/secrets/ssh_key}   # OK
 token: glpat-literal-token            # ERROR: inline secret not allowed
 ```
+
+## Commands
+
+All commands take `--config` (path to `gantry.yaml`, default `gantry.yaml`) and, except
+`version`, an `--env <name>` selecting the environment.
+
+| Command  | Reads forge? | Writes pin file? | Deploys? | Notes |
+|----------|--------------|------------------|----------|-------|
+| `plan`   | yes          | no               | no       | Shows pending pin changes for forge-tracked components (`sync --dry-run`). |
+| `sync`   | yes          | on diff (commit) | on diff  | Resolves the latest releases of forge-tracked components, commits the changed pin file, and deploys. **Explicit-pin components are skipped** — never polled or overwritten. |
+| `deploy` | no           | no               | yes      | Reconciles the running stack to the **whole current committed pin file**, every component regardless of source. An empty pin file is an error. |
+| `status` | yes          | no               | no       | Prints each component's pinned image vs. its latest release. Explicit-pin components show `latest=(untracked)`. |
+| `version`| no           | no               | no       | Prints the gantry version. |
+
+### `gantry deploy --env <name>`
+
+`deploy` is the reconcile-from-pin-file path. Unlike `sync`, it does not consult the
+forge and does not write or commit the pin file — it simply deploys whatever is already
+committed. Run it after the pin file changes through a means other than `sync`:
+
+- a Renovate or manual bump of an **explicit-pin** component, or
+- a promotion commit that copied pins from an upstream environment.
+
+It writes the pin set to the host's env file, logs in to any referenced private
+registries, and runs `docker compose pull` then `up -d`.
