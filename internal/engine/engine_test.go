@@ -1,0 +1,88 @@
+package engine
+
+import (
+	"context"
+	"testing"
+
+	"github.com/RomanAgaltsev/gantry/internal/config"
+	"github.com/RomanAgaltsev/gantry/internal/executor"
+	"github.com/RomanAgaltsev/gantry/internal/forge"
+	"github.com/RomanAgaltsev/gantry/internal/pin"
+	"github.com/stretchr/testify/require"
+)
+
+type fakeForge struct{ rel forge.Release }
+
+func (f fakeForge) LatestRelease(_ context.Context, c forge.Component) (forge.Release, error) {
+	r := f.rel
+	r.Component = c.ID
+	return r, nil
+}
+
+type fakeStore struct {
+	cur       pin.Set
+	committed pin.Set
+	msg       string
+}
+
+func (s *fakeStore) Read(string) (pin.Set, error) { return s.cur, nil }
+func (s *fakeStore) WriteAndCommit(_ string, set pin.Set, msg string) error {
+	s.committed, s.msg = set, msg
+	return nil
+}
+
+type fakeExec struct {
+	called bool
+	pins   pin.Set
+}
+
+func (e *fakeExec) Deploy(_ context.Context, p executor.Plan) (executor.Result, error) {
+	e.called, e.pins = true, p.Pins
+	return executor.Result{Changed: true}, nil
+}
+
+func cfg() *config.Config {
+	return &config.Config{
+		Components: []config.Component{{ID: "svc", Project: "g/svc", PinKey: "SVC_IMAGE"}},
+		Environments: []config.Environment{{
+			Name: "test", Source: config.Source{Track: "latest"}, PinFile: ".env.versions.test",
+		}},
+	}
+}
+
+func TestSync_DiffDeploysAndCommits(t *testing.T) {
+	f := fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v2"}}
+	store := &fakeStore{cur: pin.Set{"SVC_IMAGE": "reg/svc:v1"}}
+	ex := &fakeExec{}
+
+	res, err := Sync(context.Background(), cfg(), "test", f, ex, store, SyncOptions{})
+	require.NoError(t, err)
+	require.True(t, ex.called)
+	require.Equal(t, pin.Set{"SVC_IMAGE": "reg/svc:v2"}, ex.pins)
+	require.Equal(t, pin.Set{"SVC_IMAGE": "reg/svc:v2"}, store.committed)
+	require.Len(t, res.Changes, 1)
+}
+
+func TestSync_NoDiffIsNoOp(t *testing.T) {
+	f := fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v1"}}
+	store := &fakeStore{cur: pin.Set{"SVC_IMAGE": "reg/svc:v1"}}
+	ex := &fakeExec{}
+
+	res, err := Sync(context.Background(), cfg(), "test", f, ex, store, SyncOptions{})
+	require.NoError(t, err)
+	require.False(t, ex.called)
+	require.Nil(t, store.committed)
+	require.Empty(t, res.Changes)
+}
+
+func TestSync_DryRunDoesNotCommitOrDeploy(t *testing.T) {
+	f := fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v2"}}
+	store := &fakeStore{cur: pin.Set{"SVC_IMAGE": "reg/svc:v1"}}
+	ex := &fakeExec{}
+
+	res, err := Sync(context.Background(), cfg(), "test", f, ex, store, SyncOptions{DryRun: true})
+	require.NoError(t, err)
+	require.False(t, ex.called)
+	require.Nil(t, store.committed)
+	require.Len(t, res.Changes, 1)
+}
