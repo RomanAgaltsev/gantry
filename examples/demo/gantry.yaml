@@ -1,0 +1,25 @@
+forge:
+  kind: gitlab
+  base_url: https://gitlab.example.com
+  token: ${env:GANTRY_FORGE_TOKEN}
+  metadata_marker: gantry-release-metadata
+connections:
+  app-host:
+    address: 192.0.2.10
+    ssh:
+      user: deploy
+      key: ${file:/run/secrets/app_ssh_key}
+      known_hosts: ${file:/run/secrets/known_hosts}
+components:
+  - { id: api, project: demo/api, pin_key: API_IMAGE }
+  - { id: web, project: demo/web, pin_key: WEB_IMAGE }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    executor:
+      kind: compose-over-ssh
+      connection: app-host
+      project_dir: /opt/demo
+      compose_files: [compose.yaml]
+      env_file: .env.versions.test
