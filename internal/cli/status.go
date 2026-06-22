@@ -1,9 +1,14 @@
 package cli
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/spf13/cobra"
 
+	"github.com/RomanAgaltsev/gantry/internal/config"
 	"github.com/RomanAgaltsev/gantry/internal/forge"
+	"github.com/RomanAgaltsev/gantry/internal/pin"
 )
 
 func newStatusCmd() *cobra.Command {
@@ -22,11 +27,11 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 			for _, comp := range d.cfg.Components {
-				rel, err := d.forge.LatestRelease(cmd.Context(), forge.Component{ID: comp.ID, Project: comp.Project, PinKey: comp.PinKey})
+				line, err := componentStatusLine(cmd.Context(), comp, current, d.forge)
 				if err != nil {
 					return err
 				}
-				cmd.Printf("%-20s pinned=%-24s latest=%s\n", comp.PinKey, current[comp.PinKey], rel.ImageRef())
+				cmd.Println(line)
 			}
 			return nil
 		},
@@ -34,4 +39,15 @@ func newStatusCmd() *cobra.Command {
 	cmd.Flags().StringVar(&envName, "env", "", "environment name")
 	_ = cmd.MarkFlagRequired("env")
 	return cmd
+}
+
+func componentStatusLine(ctx context.Context, comp config.Component, current pin.Set, f forge.Forge) (string, error) {
+	if comp.IsExplicit() {
+		return fmt.Sprintf("%-20s pinned=%-24s latest=(untracked)", comp.PinKey, current[comp.PinKey]), nil
+	}
+	rel, err := f.LatestRelease(ctx, forge.Component{ID: comp.ID, Project: comp.Project, PinKey: comp.PinKey})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%-20s pinned=%-24s latest=%s", comp.PinKey, current[comp.PinKey], rel.ImageRef()), nil
 }
