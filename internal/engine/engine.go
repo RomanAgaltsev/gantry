@@ -1,0 +1,88 @@
+// Package engine orchestrates the consume → pin → deploy flow.
+package engine
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/RomanAgaltsev/gantry/internal/config"
+	"github.com/RomanAgaltsev/gantry/internal/executor"
+	"github.com/RomanAgaltsev/gantry/internal/forge"
+	"github.com/RomanAgaltsev/gantry/internal/pin"
+)
+
+// PinStore reads and commits an environment's pin file.
+type PinStore interface {
+	Read(pinFile string) (pin.Set, error)
+	WriteAndCommit(pinFile string, s pin.Set, msg string) error
+}
+
+// SyncOptions tunes a Sync run.
+type SyncOptions struct{ DryRun bool }
+
+// SyncResult reports what a Sync did.
+type SyncResult struct {
+	Changes  []pin.Change
+	Deployed bool
+}
+
+// Sync resolves each component's latest release into the environment's pin file
+// (commit-on-diff) and deploys via ex when the pins changed.
+func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge, ex executor.Executor, store PinStore, opts SyncOptions) (SyncResult, error) {
+	env, ok := cfg.Environment(envName)
+	if !ok {
+		return SyncResult{}, fmt.Errorf("environment %q not found", envName)
+	}
+	if env.Source.Track == "" {
+		return SyncResult{}, fmt.Errorf("environment %q: slice 1 supports track-mode only", envName)
+	}
+
+	desired := pin.Set{}
+	for _, comp := range cfg.Components {
+		rel, err := f.LatestRelease(ctx, forge.Component{ID: comp.ID, Project: comp.Project, PinKey: comp.PinKey})
+		if err != nil {
+			return SyncResult{}, err
+		}
+		desired[comp.PinKey] = rel.ImageRef()
+	}
+
+	current, err := store.Read(env.PinFile)
+	if err != nil {
+		return SyncResult{}, err
+	}
+	// Merge unknown (non-component) keys forward so we never drop them.
+	merged := pin.Set{}
+	for k, v := range current {
+		merged[k] = v
+	}
+	for k, v := range desired {
+		merged[k] = v
+	}
+
+	changes := pin.Diff(current, merged)
+	if len(changes) == 0 {
+		return SyncResult{}, nil
+	}
+	if opts.DryRun {
+		return SyncResult{Changes: changes}, nil
+	}
+
+	msg := commitMessage(envName, changes)
+	if err := store.WriteAndCommit(env.PinFile, merged, msg); err != nil {
+		return SyncResult{}, err
+	}
+	if _, err := ex.Deploy(ctx, executor.Plan{Env: envName, PinFile: env.PinFile, Pins: merged}); err != nil {
+		return SyncResult{Changes: changes}, err
+	}
+	return SyncResult{Changes: changes, Deployed: true}, nil
+}
+
+func commitMessage(env string, changes []pin.Change) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "chore(%s): pin %d component(s)\n\n", env, len(changes))
+	for _, c := range changes {
+		fmt.Fprintf(&b, "%s: %s -> %s\n", c.Key, c.Old, c.New)
+	}
+	return b.String()
+}
