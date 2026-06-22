@@ -111,3 +111,32 @@ func TestSync_SkipsExplicitComponents(t *testing.T) {
 	require.Equal(t, "postgres:16.4", ex.pins["POSTGRES_IMAGE"])
 	require.Equal(t, "postgres:16.4", store.committed["POSTGRES_IMAGE"])
 }
+
+func TestDeploy_ReconcilesCurrentPinFile(t *testing.T) {
+	store := &fakeStore{cur: pin.Set{
+		"SVC_IMAGE":      "reg/svc:v1",
+		"POSTGRES_IMAGE": "postgres:16.4",
+	}}
+	ex := &fakeExec{}
+	c := &config.Config{Environments: []config.Environment{{
+		Name: "test", Source: config.Source{Track: "latest"}, PinFile: ".env.versions.test",
+	}}}
+
+	res, err := Deploy(context.Background(), c, "test", ex, store)
+	require.NoError(t, err)
+	require.True(t, ex.called)
+	require.Equal(t, store.cur, ex.pins) // whole pin file, both sources
+	require.True(t, res.Deployed)
+}
+
+func TestDeploy_EmptyPinFileErrors(t *testing.T) {
+	store := &fakeStore{cur: pin.Set{}}
+	ex := &fakeExec{}
+	c := &config.Config{Environments: []config.Environment{{
+		Name: "test", PinFile: ".env.versions.test",
+	}}}
+
+	_, err := Deploy(context.Background(), c, "test", ex, store)
+	require.Error(t, err)
+	require.False(t, ex.called)
+}

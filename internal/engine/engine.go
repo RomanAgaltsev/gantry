@@ -89,3 +89,31 @@ func commitMessage(env string, changes []pin.Change) string {
 	}
 	return b.String()
 }
+
+// DeployResult reports what a Deploy did.
+type DeployResult struct {
+	Pins     pin.Set
+	Deployed bool
+}
+
+// Deploy reconciles the running stack of an environment to its current committed
+// pin file, regardless of how each pin got its value (forge-derived or explicit).
+// This is the path CI runs when the pin file changes (a Renovate or explicit bump,
+// or a promotion commit).
+func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, store PinStore) (DeployResult, error) {
+	env, ok := cfg.Environment(envName)
+	if !ok {
+		return DeployResult{}, fmt.Errorf("environment %q not found", envName)
+	}
+	pins, err := store.Read(env.PinFile)
+	if err != nil {
+		return DeployResult{}, err
+	}
+	if len(pins) == 0 {
+		return DeployResult{}, fmt.Errorf("pin file %q is empty; nothing to deploy", env.PinFile)
+	}
+	if _, err := ex.Deploy(ctx, executor.Plan{Env: envName, PinFile: env.PinFile, Pins: pins}); err != nil {
+		return DeployResult{}, err
+	}
+	return DeployResult{Pins: pins, Deployed: true}, nil
+}

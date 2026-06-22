@@ -12,7 +12,7 @@ func NewRootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.PersistentFlags().String("config", "gantry.yaml", "path to gantry.yaml")
-	root.AddCommand(newVersionCmd(), newSyncCmd(), newPlanCmd(), newStatusCmd())
+	root.AddCommand(newVersionCmd(), newSyncCmd(), newPlanCmd(), newStatusCmd(), newDeployCmd())
 	return root
 }
 
