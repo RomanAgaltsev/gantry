@@ -23,7 +23,7 @@ forge:
 connections:
   test-host:
     address: 10.0.0.1
-    ssh: { user: deploy, key: ${file:/run/secrets/key} }
+    ssh: { user: deploy, key: "${file:/run/secrets/key}" }
 components:
   - { id: svc, project: grp/svc, pin_key: SVC_IMAGE }
 environments:
@@ -60,7 +60,7 @@ func TestLoad_DanglingConnection(t *testing.T) {
 
 func TestLoad_NoSource(t *testing.T) {
 	bad := `
-forge: { kind: gitlab, base_url: https://x, token: ${env:T} }
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
 components: [{ id: svc, project: g/s, pin_key: SVC_IMAGE }]
 environments:
   - name: test
