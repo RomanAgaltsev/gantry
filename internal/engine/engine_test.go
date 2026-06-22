@@ -86,3 +86,28 @@ func TestSync_DryRunDoesNotCommitOrDeploy(t *testing.T) {
 	require.Nil(t, store.committed)
 	require.Len(t, res.Changes, 1)
 }
+
+func TestSync_SkipsExplicitComponents(t *testing.T) {
+	f := fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v2"}}
+	store := &fakeStore{cur: pin.Set{
+		"SVC_IMAGE":      "reg/svc:v1",
+		"POSTGRES_IMAGE": "postgres:16.4",
+	}}
+	ex := &fakeExec{}
+	c := &config.Config{
+		Components: []config.Component{
+			{ID: "svc", Project: "g/svc", PinKey: "SVC_IMAGE", Source: config.ComponentSource{Forge: "release"}},
+			{ID: "pg", PinKey: "POSTGRES_IMAGE", Source: config.ComponentSource{Pin: "explicit"}},
+		},
+		Environments: []config.Environment{{
+			Name: "test", Source: config.Source{Track: "latest"}, PinFile: ".env.versions.test",
+		}},
+	}
+
+	_, err := Sync(context.Background(), c, "test", f, ex, store, SyncOptions{})
+	require.NoError(t, err)
+	// forge component advanced to v2; explicit pg carried forward, never polled.
+	require.Equal(t, "reg/svc:v2", ex.pins["SVC_IMAGE"])
+	require.Equal(t, "postgres:16.4", ex.pins["POSTGRES_IMAGE"])
+	require.Equal(t, "postgres:16.4", store.committed["POSTGRES_IMAGE"])
+}

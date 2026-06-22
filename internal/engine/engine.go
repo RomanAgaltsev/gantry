@@ -40,6 +40,9 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 
 	desired := pin.Set{}
 	for _, comp := range cfg.Components {
+		if comp.IsExplicit() {
+			continue // pin maintained in the pin file; never polled/overwritten (B4-D3)
+		}
 		rel, err := f.LatestRelease(ctx, forge.Component{ID: comp.ID, Project: comp.Project, PinKey: comp.PinKey})
 		if err != nil {
 			return SyncResult{}, err
