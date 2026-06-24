@@ -53,9 +53,9 @@ func (c *Client) LatestRelease(ctx context.Context, comp forge.Component) (forge
 	if err != nil {
 		return forge.Release{}, fmt.Errorf("gitlab releases for %q: %w", comp.Project, err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() { _ = resp.Body.Close() }() //nolint:gosec // best-effort close of the response body
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) //nolint:gosec // body is best-effort context for the error message
 		return forge.Release{}, fmt.Errorf("gitlab releases for %q: %s: %s", comp.Project, resp.Status, body)
 	}
 	var rels []apiRelease

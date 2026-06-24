@@ -28,7 +28,7 @@ type Executor struct {
 // Deploy writes the env file on the host, then pulls and brings up the stack.
 func (e *Executor) Deploy(ctx context.Context, p executor.Plan) (executor.Result, error) {
 	envPath := path.Join(e.ProjectDir, e.EnvFile)
-	if _, err := e.Runner.Run(ctx, fmt.Sprintf("cat > %s", shellQuote(envPath)), pin.Render(p.Pins)); err != nil {
+	if _, err := e.Runner.Run(ctx, "cat > "+shellQuote(envPath), pin.Render(p.Pins)); err != nil {
 		return executor.Result{}, fmt.Errorf("write env file: %w", err)
 	}
 

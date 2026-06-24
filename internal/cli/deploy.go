@@ -1,8 +1,9 @@
 package cli
 
 import (
-	"github.com/RomanAgaltsev/gantry/internal/engine"
 	"github.com/spf13/cobra"
+
+	"github.com/RomanAgaltsev/gantry/internal/engine"
 )
 
 func newDeployCmd() *cobra.Command {
@@ -26,6 +27,6 @@ func newDeployCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&envName, "env", "", "environment name")
-	_ = cmd.MarkFlagRequired("env")
+	mustRequireEnvFlag(cmd)
 	return cmd
 }

@@ -7,8 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/RomanAgaltsev/gantry/internal/forge"
 	"github.com/stretchr/testify/require"
+
+	"github.com/RomanAgaltsev/gantry/internal/forge"
 )
 
 const relBody = "<!-- gantry-release-metadata:v1:start -->\n```json\n" +

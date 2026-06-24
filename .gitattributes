@@ -1,0 +1,10 @@
+# Normalize line endings to LF for all text so files render identically on every
+# platform (gantry writes dotenv pin files and is developed on Windows).
+* text=auto eol=lf
+
+*.go   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.md   text eol=lf
+*.json text eol=lf
+Dockerfile text eol=lf

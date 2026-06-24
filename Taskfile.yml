@@ -1,13 +1,92 @@
 version: "3"
+
+vars:
+  GO_VERSION: "1.26"
+  GOLANGCI_LINT_VERSION: "v2.12.2"
+  GCI_VERSION: "v0.14.0"
+  GOFUMPT_VERSION: "v0.10.0"
+
+  BIN_DIR: '{{.ROOT_DIR | replace "\\" "/"}}/bin'
+  EXE_EXT: '{{if eq OS "windows"}}.exe{{end}}'
+  GOLANGCI_LINT: "{{.BIN_DIR}}/golangci-lint{{.EXE_EXT}}"
+  GCI: "{{.BIN_DIR}}/gci{{.EXE_EXT}}"
+  GOFUMPT: "{{.BIN_DIR}}/gofumpt{{.EXE_EXT}}"
+
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  LDFLAGS: >-
+    -s -w
+    -X github.com/RomanAgaltsev/gantry/internal/cli.Version={{.VERSION}}
+
 tasks:
+  default:
+    desc: list available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  formatters:install:
+    desc: install gofumpt and gci
+    cmds:
+      - "GOBIN={{.BIN_DIR}} go install mvdan.cc/gofumpt@{{.GOFUMPT_VERSION}}"
+      - "GOBIN={{.BIN_DIR}} go install github.com/daixiang0/gci@{{.GCI_VERSION}}"
+    status:
+      - ls {{.GOFUMPT}} >/dev/null 2>&1
+      - ls {{.GCI}} >/dev/null 2>&1
+
+  golangci-lint:install:
+    desc: install golangci-lint
+    cmds:
+      - GOBIN={{.BIN_DIR}} go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}}
+    status:
+      - ls {{.GOLANGCI_LINT}} >/dev/null 2>&1
+
+  setup:
+    desc: install all dev tools
+    deps: [formatters:install, golangci-lint:install]
+
+  format:
+    desc: format code (gofumpt + gci)
+    deps: [formatters:install]
+    cmds:
+      - bash -c "find . -type f -name '*.go' -exec {{.GOFUMPT}} -extra -w {} +"
+      - bash -c "find . -type f -name '*.go' -exec {{.GCI}} write -s standard -s default -s 'prefix(github.com/RomanAgaltsev/gantry)' {} +"
+
+  lint:
+    desc: run golangci-lint
+    deps: [golangci-lint:install]
+    cmds:
+      - "{{.GOLANGCI_LINT}} run --allow-parallel-runners ./... --config=.golangci.yml"
+
+  vet:
+    desc: go vet ./...
+    cmds:
+      - go vet ./...
+
+  test:
+    desc: race + shuffled tests
+    cmds:
+      - go test -race -shuffle=on ./...
+
+  cover:
+    desc: coverage profile
+    cmds:
+      - go test -race -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
+
+  deps:update:
+    desc: tidy modules
+    cmds:
+      - go mod tidy -compat={{.GO_VERSION}}
+
   build:
-    {
-      cmds:
-        [
-          'go build -ldflags "-X github.com/RomanAgaltsev/gantry/internal/cli.Version={{.VERSION}}" -o gantry ./cmd/gantry',
-        ],
-      vars: { VERSION: '{{.VERSION | default "dev"}}' },
-    }
-  test: { cmds: ["go test ./..."] }
-  lint: { cmds: ["golangci-lint run"] }
-  tidy: { cmds: ["go mod tidy"] }
+    desc: build gantry into ./bin
+    cmds:
+      - go build -ldflags '{{.LDFLAGS}}' -o {{.BIN_DIR}}/gantry{{.EXE_EXT}} ./cmd/gantry
+
+  ci:
+    desc: full local gate (what CI runs)
+    cmds:
+      - task: deps:update
+      - task: vet
+      - task: lint
+      - task: test

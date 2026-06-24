@@ -28,7 +28,10 @@ type deps struct {
 // built only when needExec is true (an actual deploy); read-only commands
 // (plan, status, sync --dry-run) skip it so they never require usable SSH creds.
 func buildDeps(cmd *cobra.Command, envName string, needExec bool) (*deps, error) {
-	path, _ := cmd.Flags().GetString("config")
+	path, err := cmd.Flags().GetString("config")
+	if err != nil {
+		return nil, err
+	}
 	cfg, err := config.Load(path)
 	if err != nil {
 		return nil, err
@@ -111,8 +114,17 @@ func newSyncCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&envName, "env", "", "environment name")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show changes without writing/deploying")
-	_ = cmd.MarkFlagRequired("env")
+	mustRequireEnvFlag(cmd)
 	return cmd
+}
+
+// mustRequireEnvFlag marks the --env flag required. MarkFlagRequired only errors
+// when the flag is undefined, which is a programming error here (the flag is
+// registered just above), so a failure should crash loudly rather than be ignored.
+func mustRequireEnvFlag(cmd *cobra.Command) {
+	if err := cmd.MarkFlagRequired("env"); err != nil {
+		panic(err)
+	}
 }
 
 func printChanges(cmd *cobra.Command, changes []pin.Change, deployed bool) {
