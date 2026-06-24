@@ -1,8 +1,9 @@
 package cli
 
 import (
-	"github.com/RomanAgaltsev/gantry/internal/engine"
 	"github.com/spf13/cobra"
+
+	"github.com/RomanAgaltsev/gantry/internal/engine"
 )
 
 func newDeployCmd() *cobra.Command {
