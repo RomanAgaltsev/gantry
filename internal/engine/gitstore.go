@@ -62,7 +62,7 @@ func (s *gitStore) Read(pinFile string) (pin.Set, error) {
 
 func (s *gitStore) WriteAndCommit(pinFile string, set pin.Set, msg string) error {
 	abs := filepath.Join(s.repoDir, pinFile)
-	if err := os.WriteFile(abs, pin.Render(set), 0o644); err != nil {
+	if err := os.WriteFile(abs, pin.Render(set), 0o600); err != nil {
 		return err
 	}
 	wt, err := s.repo.Worktree()

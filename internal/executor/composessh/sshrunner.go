@@ -3,6 +3,7 @@ package composessh
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -24,7 +25,7 @@ type sshRunner struct {
 // knownHosts must be the contents of a known_hosts file; empty is rejected.
 func NewSSHRunner(addr, user, privateKey, knownHosts string) (Runner, error) {
 	if knownHosts == "" {
-		return nil, fmt.Errorf("known_hosts required (no silent host-key TOFU)")
+		return nil, errors.New("known_hosts required (no silent host-key TOFU)")
 	}
 	signer, err := ssh.ParsePrivateKey([]byte(privateKey))
 	if err != nil {
@@ -53,7 +54,7 @@ func (r *sshRunner) Run(ctx context.Context, cmd string, stdin []byte) (string, 
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = sess.Close() }()
+	defer func() { _ = sess.Close() }() //nolint:gosec // best-effort close; the command's own error is what matters
 	if stdin != nil {
 		sess.Stdin = bytes.NewReader(stdin)
 	}
@@ -96,7 +97,7 @@ func knownHostsCallback(contents string) (ssh.HostKeyCallback, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = os.Remove(f.Name()) }()
+	defer func() { _ = os.Remove(f.Name()) }() //nolint:gosec // best-effort cleanup of a temp file
 	if _, err := f.WriteString(contents); err != nil {
 		return nil, err
 	}

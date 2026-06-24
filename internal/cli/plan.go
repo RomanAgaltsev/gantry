@@ -25,6 +25,6 @@ func newPlanCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&envName, "env", "", "environment name")
-	_ = cmd.MarkFlagRequired("env")
+	mustRequireEnvFlag(cmd)
 	return cmd
 }
