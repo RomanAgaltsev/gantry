@@ -4,11 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/RomanAgaltsev/gantry/internal/config"
 	"github.com/RomanAgaltsev/gantry/internal/executor"
 	"github.com/RomanAgaltsev/gantry/internal/forge"
 	"github.com/RomanAgaltsev/gantry/internal/pin"
-	"github.com/stretchr/testify/require"
 )
 
 type fakeForge struct{ rel forge.Release }
@@ -44,12 +45,12 @@ func (e *fakeExec) Deploy(_ context.Context, p executor.Plan) (executor.Result, 
 type failExec struct{}
 
 func (e *failExec) Deploy(context.Context, executor.Plan) (executor.Result, error) {
-	return executor.Result{}, errString("ssh down")
+	return executor.Result{}, stringError("ssh down")
 }
 
-type errString string
+type stringError string
 
-func (e errString) Error() string { return string(e) }
+func (e stringError) Error() string { return string(e) }
 
 func TestSync_DeployFailureSurfacesRecoveryPath(t *testing.T) {
 	f := fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v2"}}

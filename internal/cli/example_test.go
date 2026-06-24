@@ -3,8 +3,9 @@ package cli
 import (
 	"testing"
 
-	"github.com/RomanAgaltsev/gantry/internal/config"
 	"github.com/stretchr/testify/require"
+
+	"github.com/RomanAgaltsev/gantry/internal/config"
 )
 
 func TestExampleConfigLoads(t *testing.T) {

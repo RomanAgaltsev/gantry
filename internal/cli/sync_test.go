@@ -80,8 +80,11 @@ func initRepo(t *testing.T) string {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env.versions.test"), []byte("SVC_IMAGE=reg/svc:v1\n"), 0o644))
 	// Commit the pin file: gantry reads the committed (HEAD) state, not the worktree.
 	for _, args := range [][]string{
-		{"init"}, {"config", "user.email", "t@example.com"}, {"config", "user.name", "t"},
-		{"add", ".env.versions.test"}, {"commit", "-m", "seed pin file"},
+		{"init"},
+		{"config", "user.email", "t@example.com"},
+		{"config", "user.name", "t"},
+		{"add", ".env.versions.test"},
+		{"commit", "-m", "seed pin file"},
 	} {
 		c := exec.Command("git", args...)
 		c.Dir = dir

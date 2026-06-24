@@ -144,6 +144,13 @@ func (c *Config) validate() error {
 	if c.Forge.Kind != "gitlab" {
 		return fmt.Errorf("unsupported forge.kind %q (slice 1: gitlab)", c.Forge.Kind)
 	}
+	if err := c.validateComponents(); err != nil {
+		return err
+	}
+	return c.validateEnvironments()
+}
+
+func (c *Config) validateComponents() error {
 	seen := map[string]bool{}
 	for _, comp := range c.Components {
 		if comp.PinKey == "" {
@@ -169,6 +176,10 @@ func (c *Config) validate() error {
 			return fmt.Errorf("component %q: forge-release component requires project", comp.ID)
 		}
 	}
+	return nil
+}
+
+func (c *Config) validateEnvironments() error {
 	for _, env := range c.Environments {
 		if env.Source.Track == "" && env.Source.PromoteFrom == "" {
 			return fmt.Errorf("environment %q: source must set track or promote_from", env.Name)

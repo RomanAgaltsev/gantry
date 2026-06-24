@@ -84,7 +84,8 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 		// sees no diff and won't retry. Make the drift recoverable by hand.
 		return SyncResult{Changes: changes}, fmt.Errorf(
 			"deploy failed after committing pins for %q; run `gantry deploy --env %s` to retry: %w",
-			envName, envName, err)
+			envName, envName, err,
+		)
 	}
 	return SyncResult{Changes: changes, Deployed: true}, nil
 }

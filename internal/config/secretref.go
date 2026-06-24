@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -35,7 +36,7 @@ func (r SecretResolver) Resolve(s SecretRef) (string, error) {
 		return "", nil
 	}
 	if !strings.HasPrefix(raw, "${") || !strings.HasSuffix(raw, "}") {
-		return "", fmt.Errorf("inline secret not allowed; use ${env:NAME} or ${file:/path}")
+		return "", errors.New("inline secret not allowed; use ${env:NAME} or ${file:/path}")
 	}
 	inner := raw[2 : len(raw)-1]
 	scheme, arg, ok := strings.Cut(inner, ":")
