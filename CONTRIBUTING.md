@@ -45,3 +45,20 @@ Releases are automated by
 Conventional-Commit PRs to `main` keeps a standing **release PR** that updates
 `CHANGELOG.md` and the version. Merging that PR tags `vX.Y.Z`, and GoReleaser publishes
 the binaries.
+
+
+## Maintainer setup (one-time)
+
+These steps require repo-admin access and cannot be committed as code:
+
+- [ ] **Codecov:** add the repo at codecov.io and set the `CODECOV_TOKEN` repo secret
+  (`Settings → Secrets and variables → Actions`).
+- [ ] **Dependabot:** enable Dependabot (`Settings → Code security`); it picks up
+  `.github/dependabot.yml` automatically.
+- [ ] **Actions permissions:** `Settings → Actions → General → Workflow permissions` =
+  "Read and write" + "Allow GitHub Actions to create and approve pull requests" (so
+  release-please can open release PRs).
+- [ ] **Code scanning:** ensure CodeQL/Code scanning is enabled (default once
+  `security.yml` runs).
+- [ ] **Branch protection:** require the `lint`, `test`, `codeql`, `govulncheck`, and
+  `pr-title` checks on `main`.
