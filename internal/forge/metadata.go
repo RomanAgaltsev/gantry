@@ -2,6 +2,7 @@ package forge
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -41,7 +42,7 @@ func ParseMetadata(body, marker string) (Release, error) {
 		return Release{}, fmt.Errorf("invalid metadata JSON: %w", err)
 	}
 	if m.ImageRepository == "" || m.ImageTag == "" {
-		return Release{}, fmt.Errorf("metadata missing image_repository/image_tag")
+		return Release{}, errors.New("metadata missing image_repository/image_tag")
 	}
 	built, err := time.Parse(time.RFC3339, m.BuiltAt)
 	if err != nil {
