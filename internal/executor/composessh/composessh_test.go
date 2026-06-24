@@ -5,9 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/RomanAgaltsev/gantry/internal/executor"
 	"github.com/RomanAgaltsev/gantry/internal/pin"
-	"github.com/stretchr/testify/require"
 )
 
 type fakeRunner struct {
@@ -53,7 +54,7 @@ func TestDeploy_QuotesInterpolatedValues(t *testing.T) {
 	fr := &fakeRunner{}
 	ex := &Executor{
 		Runner:       fr,
-		ProjectDir:   "/opt/my app",      // space
+		ProjectDir:   "/opt/my app", // space
 		ComposeFiles: []string{"compose.yaml"},
 		EnvFile:      ".evil;touch pwned", // injection attempt
 		Logins: []RegistryLogin{
