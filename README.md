@@ -1,5 +1,12 @@
 # gantry
 
+[![ci](https://github.com/RomanAgaltsev/gantry/actions/workflows/ci.yml/badge.svg)](https://github.com/RomanAgaltsev/gantry/actions/workflows/ci.yml)
+[![test](https://github.com/RomanAgaltsev/gantry/actions/workflows/test.yml/badge.svg)](https://github.com/RomanAgaltsev/gantry/actions/workflows/test.yml)
+[![security](https://github.com/RomanAgaltsev/gantry/actions/workflows/security.yml/badge.svg)](https://github.com/RomanAgaltsev/gantry/actions/workflows/security.yml)
+[![codecov](https://codecov.io/gh/RomanAgaltsev/gantry/branch/main/graph/badge.svg)](https://codecov.io/gh/RomanAgaltsev/gantry)
+[![Go Reference](https://pkg.go.dev/badge/github.com/RomanAgaltsev/gantry.svg)](https://pkg.go.dev/github.com/RomanAgaltsev/gantry)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **gantry** is a non-Kubernetes release orchestrator. It reads the latest published
 release of each of your components from a forge (GitLab today), writes the resolved
 immutable image references into a per-environment dotenv pin file (committing only
