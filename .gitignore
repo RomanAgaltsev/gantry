@@ -1,4 +1,40 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 /gantry
-/dist
+/bin/
+/dist/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Coverage profiles and other test artifacts
 *.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Go workspace file
+go.work
+go.work.sum
+
+# gantry runtime artifacts
 .env.versions.*
+
+# env file
+.env
+
+# Editor/IDE
+.idea/
+.vscode/
+*.iml
+
+# Claude Code (local-only settings; shared settings.json should be tracked)
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
