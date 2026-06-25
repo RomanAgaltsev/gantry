@@ -163,7 +163,7 @@ func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor
 
 // deployAndRecord deploys pins for env and records the outcome keyed by sha. A nil
 // executor is a setup error (no record is written); a deploy failure is recorded as
-// "failed" and returned, so the next Sync can self-heal (decision A2-D7).
+// "failed" and returned, so the next Sync can self-heal.
 func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha, by string, ex executor.Executor, led ledger.Ledger) error {
 	if ex == nil {
 		return fmt.Errorf("no executor configured for environment %q", env)
@@ -186,4 +186,72 @@ func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha
 		return fmt.Errorf("deploy %q: %w", env, deployErr)
 	}
 	return recErr
+}
+
+// PromoteOptions tunes a Promote run.
+type PromoteOptions struct{ DryRun bool }
+
+// PromoteResult reports what a Promote did.
+type PromoteResult struct {
+	FromSHA   string  // the source commit snapshotted
+	Pins      pin.Set // the promoted pin set
+	Committed string  // the new commit on the target pin file
+	Deployed  bool
+	DryRun    bool
+}
+
+// Promote copies fromEnv's pin file as of sha into toEnv's pin file and deploys it.
+// sha defaults to the latest green (Result=="ok") deploy of fromEnv; an explicit sha is
+// gated — Promote refuses one whose (fromEnv, sha) ledger entry is missing or not ok.
+// The snapshot is frozen: it never reads "the current upstream pin,"
+// only the file as committed at sha.
+func Promote(ctx context.Context, cfg *config.Config, fromEnv, toEnv, sha string, ex executor.Executor, store PinStore, led ledger.Ledger, opts PromoteOptions) (PromoteResult, error) {
+	from, ok := cfg.Environment(fromEnv)
+	if !ok {
+		return PromoteResult{}, fmt.Errorf("environment %q not found", fromEnv)
+	}
+	to, ok := cfg.Environment(toEnv)
+	if !ok {
+		return PromoteResult{}, fmt.Errorf("environment %q not found", toEnv)
+	}
+
+	if sha == "" {
+		green, err := led.LatestGreen(fromEnv)
+		if err != nil {
+			return PromoteResult{}, fmt.Errorf("no green deploy of %q to promote: %w", fromEnv, err)
+		}
+		sha = green.PinCommit
+	} else {
+		entry, ok, err := led.Lookup(fromEnv, sha)
+		if err != nil {
+			return PromoteResult{}, err
+		}
+		if !ok {
+			return PromoteResult{}, fmt.Errorf("refusing to promote %q@%.7s: no deploy record (gate)", fromEnv, sha)
+		}
+		if entry.Result != "ok" {
+			return PromoteResult{}, fmt.Errorf("refusing to promote %q@%.7s: last deploy was %q, not ok (gate)", fromEnv, sha, entry.Result)
+		}
+	}
+
+	pins, err := store.ReadAt(sha, from.PinFile)
+	if err != nil {
+		return PromoteResult{}, err
+	}
+	if len(pins) == 0 {
+		return PromoteResult{}, fmt.Errorf("pin set at %.7s is empty; nothing to promote", sha)
+	}
+	if opts.DryRun {
+		return PromoteResult{FromSHA: sha, Pins: pins, DryRun: true}, nil
+	}
+
+	msg := fmt.Sprintf("chore(%s): promote from %s@%.7s (%d pins)", toEnv, fromEnv, sha, len(pins))
+	newSHA, err := store.WriteAndCommit(to.PinFile, pins, msg)
+	if err != nil {
+		return PromoteResult{}, err
+	}
+	if err := deployAndRecord(ctx, toEnv, to.PinFile, pins, newSHA, "promote", ex, led); err != nil {
+		return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA}, err
+	}
+	return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA, Deployed: true}, nil
 }
