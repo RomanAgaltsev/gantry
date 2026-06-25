@@ -142,7 +142,16 @@ If nothing changed, `sync` is a no-op: no commit, no deploy.
 > committed pin file (gantry's `sync` error tells you this too). See
 > [Recovering a `sync` whose deploy failed](configuration.md#recovering-a-sync-whose-deploy-failed).
 
-## 6. Status
+## 6. Promoting to prod
+
+Once `sync` has a green deploy on `test`, promote that exact set to `prod` and roll back
+if needed. See [promotion.md](promotion.md):
+
+    gantry promote --from test --to prod
+    gantry rollback --env prod
+    gantry history --env prod
+
+## 7. Status
 
 `status` compares the currently pinned image of each component against the latest
 release available on the forge, without changing anything:
