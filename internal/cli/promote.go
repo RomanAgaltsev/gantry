@@ -33,7 +33,7 @@ func newPromoteCmd() *cobra.Command {
 	cmd.Flags().StringVar(&toEnv, "to", "", "target environment")
 	cmd.Flags().StringVar(&sha, "sha", "", "source pin commit (default: latest green)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would be promoted without acting")
-	_ = cmd.MarkFlagRequired("from")
-	_ = cmd.MarkFlagRequired("to")
+	mustRequireFlag(cmd, "from")
+	mustRequireFlag(cmd, "to")
 	return cmd
 }

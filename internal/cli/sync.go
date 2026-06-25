@@ -121,15 +121,15 @@ func newSyncCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&envName, "env", "", "environment name")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show changes without writing/deploying")
-	mustRequireEnvFlag(cmd)
+	mustRequireFlag(cmd, "env")
 	return cmd
 }
 
-// mustRequireEnvFlag marks the --env flag required. MarkFlagRequired only errors
-// when the flag is undefined, which is a programming error here (the flag is
-// registered just above), so a failure should crash loudly rather than be ignored.
-func mustRequireEnvFlag(cmd *cobra.Command) {
-	if err := cmd.MarkFlagRequired("env"); err != nil {
+// mustRequireFlag marks the named flag required. MarkFlagRequired only errors when the
+// flag is undefined, which is a programming error here (the flag is registered just
+// above), so a failure should crash loudly rather than be ignored.
+func mustRequireFlag(cmd *cobra.Command, name string) {
+	if err := cmd.MarkFlagRequired(name); err != nil {
 		panic(err)
 	}
 }

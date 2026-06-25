@@ -30,6 +30,6 @@ func newHistoryCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&envName, "env", "", "environment name")
-	_ = cmd.MarkFlagRequired("env")
+	mustRequireFlag(cmd, "env")
 	return cmd
 }
