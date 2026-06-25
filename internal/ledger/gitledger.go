@@ -36,20 +36,19 @@ func (l *gitLedger) abs() string { return filepath.Join(l.repoDir, filepath.From
 
 // Record appends one JSON line to the ledger file and commits it.
 func (l *gitLedger) Record(e Entry) error {
-	if err := os.MkdirAll(filepath.Dir(l.abs()), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(l.abs()), 0o750); err != nil {
 		return fmt.Errorf("create ledger dir: %w", err)
 	}
 	line, err := json.Marshal(e)
 	if err != nil {
 		return fmt.Errorf("marshal ledger entry: %w", err)
 	}
-	f, err := os.OpenFile(l.abs(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(l.abs(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("open ledger: %w", err)
 	}
 	if _, err := f.Write(append(line, '\n')); err != nil {
-		_ = f.Close()
-		return fmt.Errorf("append ledger: %w", err)
+		return fmt.Errorf("append ledger: %w", errors.Join(err, f.Close()))
 	}
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("close ledger: %w", err)

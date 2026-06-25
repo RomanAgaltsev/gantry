@@ -27,7 +27,8 @@ func TestGitStore_CommitStampsCurrentTime(t *testing.T) {
 	require.NoError(t, err)
 
 	before := time.Now().Add(-time.Second)
-	require.NoError(t, store.WriteAndCommit(".env.versions.test", pin.Set{"A": "reg/a:v1"}, "msg"))
+	_, err = store.WriteAndCommit(".env.versions.test", pin.Set{"A": "reg/a:v1"}, "msg")
+	require.NoError(t, err)
 	after := time.Now().Add(time.Second)
 
 	ref, err := repo.Head()
@@ -51,7 +52,8 @@ func TestGitStore_ReadReadsCommittedHEADNotWorkingTree(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, got)
 
-	require.NoError(t, store.WriteAndCommit(".env.versions.test", pin.Set{"A": "reg/a:v1"}, "commit v1"))
+	_, err = store.WriteAndCommit(".env.versions.test", pin.Set{"A": "reg/a:v1"}, "commit v1")
+	require.NoError(t, err)
 
 	// An uncommitted working-tree edit must NOT be seen by Read (committed contract).
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env.versions.test"), []byte("A=reg/a:v2\n"), 0o644))

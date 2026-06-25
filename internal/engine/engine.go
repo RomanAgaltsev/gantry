@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/RomanAgaltsev/gantry/internal/config"
 	"github.com/RomanAgaltsev/gantry/internal/executor"
 	"github.com/RomanAgaltsev/gantry/internal/forge"
+	"github.com/RomanAgaltsev/gantry/internal/ledger"
 	"github.com/RomanAgaltsev/gantry/internal/pin"
 )
 
@@ -33,19 +35,21 @@ type SyncOptions struct{ DryRun bool }
 
 // SyncResult reports what a Sync did.
 type SyncResult struct {
-	Changes  []pin.Change
-	Deployed bool
+	Changes   []pin.Change
+	Deployed  bool
+	Recovered bool // a previously committed-but-undeployed pin set was redeployed
 }
 
 // Sync resolves each component's latest release into the environment's pin file
-// (commit-on-diff) and deploys via ex when the pins changed.
-func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge, ex executor.Executor, store PinStore, opts SyncOptions) (SyncResult, error) {
+// (commit-on-diff) and deploys via ex. With no diff it still ensures the latest pin
+// commit has a green ledger entry, redeploying if not (decision A2-D7).
+func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge, ex executor.Executor, store PinStore, led ledger.Ledger, opts SyncOptions) (SyncResult, error) {
 	env, ok := cfg.Environment(envName)
 	if !ok {
 		return SyncResult{}, fmt.Errorf("environment %q not found", envName)
 	}
 	if env.Source.Track == "" {
-		return SyncResult{}, fmt.Errorf("environment %q: slice 1 supports track-mode only", envName)
+		return SyncResult{}, fmt.Errorf("environment %q: sync supports track-mode only", envName)
 	}
 
 	desired := pin.Set{}
@@ -64,7 +68,6 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 	if err != nil {
 		return SyncResult{}, err
 	}
-	// Merge unknown (non-component) keys forward so we never drop them.
 	merged := pin.Set{}
 	for k, v := range current {
 		merged[k] = v
@@ -75,29 +78,47 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 
 	changes := pin.Diff(current, merged)
 	if len(changes) == 0 {
-		return SyncResult{}, nil
+		return ensureGreen(ctx, envName, env.PinFile, current, ex, store, led, opts)
 	}
 	if opts.DryRun {
 		return SyncResult{Changes: changes}, nil
 	}
 
-	if ex == nil {
-		return SyncResult{}, fmt.Errorf("no executor configured for environment %q", envName)
-	}
-
-	msg := commitMessage(envName, changes)
-	if _, err := store.WriteAndCommit(env.PinFile, merged, msg); err != nil {
+	sha, err := store.WriteAndCommit(env.PinFile, merged, commitMessage(envName, changes))
+	if err != nil {
 		return SyncResult{}, err
 	}
-	if _, err := ex.Deploy(ctx, executor.Plan{Env: envName, PinFile: env.PinFile, Pins: merged}); err != nil {
-		// The new pins are already committed but not deployed: a plain re-`sync`
-		// sees no diff and won't retry. Make the drift recoverable by hand.
-		return SyncResult{Changes: changes}, fmt.Errorf(
-			"deploy failed after committing pins for %q; run `gantry deploy --env %s` to retry: %w",
-			envName, envName, err,
-		)
+	if err := deployAndRecord(ctx, envName, env.PinFile, merged, sha, "sync", ex, led); err != nil {
+		return SyncResult{Changes: changes}, err
 	}
 	return SyncResult{Changes: changes, Deployed: true}, nil
+}
+
+// ensureGreen redeploys the current pins when the latest pin commit lacks a green
+// ledger entry; otherwise it is a no-op. This makes a deploy that failed after its
+// pin commit self-heal on the next Sync.
+func ensureGreen(ctx context.Context, envName, pinFile string, current pin.Set, ex executor.Executor, store PinStore, led ledger.Ledger, opts SyncOptions) (SyncResult, error) {
+	sha, err := store.LatestCommit(pinFile)
+	if errors.Is(err, ErrNoHistory) {
+		return SyncResult{}, nil // nothing was ever committed; nothing to ensure
+	}
+	if err != nil {
+		return SyncResult{}, err
+	}
+	entry, ok, err := led.Lookup(envName, sha)
+	if err != nil {
+		return SyncResult{}, err
+	}
+	if ok && entry.Result == "ok" {
+		return SyncResult{}, nil // already green
+	}
+	if opts.DryRun {
+		return SyncResult{Recovered: true}, nil
+	}
+	if err := deployAndRecord(ctx, envName, pinFile, current, sha, "sync", ex, led); err != nil {
+		return SyncResult{Recovered: true}, err
+	}
+	return SyncResult{Deployed: true, Recovered: true}, nil
 }
 
 func commitMessage(env string, changes []pin.Change) string {
@@ -115,11 +136,10 @@ type DeployResult struct {
 	Deployed bool
 }
 
-// Deploy reconciles the running stack of an environment to its current committed
-// pin file, regardless of how each pin got its value (forge-derived or explicit).
-// This is the path CI runs when the pin file changes (a Renovate or explicit bump,
-// or a promotion commit).
-func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, store PinStore) (DeployResult, error) {
+// Deploy reconciles the running stack of an environment to its current committed pin
+// file (the path CI runs on a Renovate/explicit bump or a promotion commit) and records
+// the outcome.
+func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, store PinStore, led ledger.Ledger) (DeployResult, error) {
 	env, ok := cfg.Environment(envName)
 	if !ok {
 		return DeployResult{}, fmt.Errorf("environment %q not found", envName)
@@ -131,11 +151,39 @@ func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor
 	if len(pins) == 0 {
 		return DeployResult{}, fmt.Errorf("pin file %q is empty; nothing to deploy", env.PinFile)
 	}
-	if ex == nil {
-		return DeployResult{}, fmt.Errorf("no executor configured for environment %q", envName)
+	sha, err := store.LatestCommit(env.PinFile)
+	if err != nil {
+		return DeployResult{}, err
 	}
-	if _, err := ex.Deploy(ctx, executor.Plan{Env: envName, PinFile: env.PinFile, Pins: pins}); err != nil {
+	if err := deployAndRecord(ctx, envName, env.PinFile, pins, sha, "deploy", ex, led); err != nil {
 		return DeployResult{}, err
 	}
 	return DeployResult{Pins: pins, Deployed: true}, nil
+}
+
+// deployAndRecord deploys pins for env and records the outcome keyed by sha. A nil
+// executor is a setup error (no record is written); a deploy failure is recorded as
+// "failed" and returned, so the next Sync can self-heal (decision A2-D7).
+func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha, by string, ex executor.Executor, led ledger.Ledger) error {
+	if ex == nil {
+		return fmt.Errorf("no executor configured for environment %q", env)
+	}
+	_, deployErr := ex.Deploy(ctx, executor.Plan{Env: env, PinFile: pinFile, Pins: pins})
+	result := "ok"
+	if deployErr != nil {
+		result = "failed"
+	}
+	recErr := led.Record(ledger.Entry{
+		Environment: env,
+		PinCommit:   sha,
+		Result:      result,
+		Healthy:     "unknown",
+		ImageSet:    map[string]string(pins),
+		DeployedAt:  time.Now(),
+		By:          by,
+	})
+	if deployErr != nil {
+		return fmt.Errorf("deploy %q: %w", env, deployErr)
+	}
+	return recErr
 }
