@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.0](https://github.com/RomanAgaltsev/gantry/compare/v0.2.0...v0.3.0) (2026-06-25)
+
+
+### Features
+
+* add gated SHA-frozen promote (engine + CLI) ([ef15cdf](https://github.com/RomanAgaltsev/gantry/commit/ef15cdf688c9381a19b461ad5bf321a037d0caf2))
+* add logical-revert rollback (engine + CLI) ([1fd6dfa](https://github.com/RomanAgaltsev/gantry/commit/1fd6dfab2efdddf836ed282dfd9311132967c497))
+* **cli:** add history command over the deploy-outcome ledger ([96a5096](https://github.com/RomanAgaltsev/gantry/commit/96a50967de1aac3b8ff889f9a5ee9c0f876cc9d3))
+* **engine:** add ReadAt/LatestCommit/ParentOf seams; WriteAndCommit ([6b20a54](https://github.com/RomanAgaltsev/gantry/commit/6b20a54143a9e193d3a3c7ced92767fb2c62e4d0))
+* **engine:** make sync/deploy ledger-aware and self-healing ([844fd4d](https://github.com/RomanAgaltsev/gantry/commit/844fd4d2119b122001a831655afd4a5daa40208c))
+* **ledger:** add Entry, Ledger interface, and pure query helpers ([fce9072](https://github.com/RomanAgaltsev/gantry/commit/fce90724f00230becde97a56e98da70b2a83ee7f))
+* **ledger:** add git-backed .gantry/deploys.jsonl implementation ([98d5e0f](https://github.com/RomanAgaltsev/gantry/commit/98d5e0f3ab44eae8deac42f0919e712b59a5ba42))
+* promote and rollback ([9dd97da](https://github.com/RomanAgaltsev/gantry/commit/9dd97da199d8336fa34ec2bee58cdbe5b210fc05))
+
+
+### Bug Fixes
+
+* linter issues ([ea8de5c](https://github.com/RomanAgaltsev/gantry/commit/ea8de5c875ede18bcfbbfb3832461a3b474e4b8d))
+
 ## [0.2.0](https://github.com/RomanAgaltsev/gantry/compare/v0.1.0...v0.2.0) (2026-06-24)
 
 
