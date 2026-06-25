@@ -101,7 +101,7 @@ func (s *gitStore) ParentOf(sha string) (string, error) {
 // WriteAndCommit writes pinFile, stages it, and commits, returning the new commit SHA.
 func (s *gitStore) WriteAndCommit(pinFile string, set pin.Set, msg string) (string, error) {
 	abs := filepath.Join(s.repoDir, pinFile)
-	if err := os.WriteFile(abs, pin.Render(set), 0o644); err != nil {
+	if err := os.WriteFile(abs, pin.Render(set), 0o600); err != nil {
 		return "", err
 	}
 	wt, err := s.repo.Worktree()

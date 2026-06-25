@@ -13,15 +13,17 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/executor/composessh"
 	"github.com/RomanAgaltsev/gantry/internal/forge"
 	"github.com/RomanAgaltsev/gantry/internal/forge/gitlab"
+	"github.com/RomanAgaltsev/gantry/internal/ledger"
 	"github.com/RomanAgaltsev/gantry/internal/pin"
 )
 
 type deps struct {
-	cfg   *config.Config
-	forge forge.Forge
-	exec  executor.Executor
-	store engine.PinStore
-	env   string
+	cfg    *config.Config
+	forge  forge.Forge
+	exec   executor.Executor
+	store  engine.PinStore
+	ledger ledger.Ledger
+	env    string
 }
 
 // buildDeps wires the engine's collaborators from config. The SSH executor is
@@ -90,7 +92,12 @@ func buildDeps(cmd *cobra.Command, envName string, needExec bool) (*deps, error)
 	if err != nil {
 		return nil, err
 	}
-	return &deps{cfg: cfg, forge: f, exec: ex, store: store, env: envName}, nil
+	led, err := ledger.NewGitLedger(filepath.Dir(path),
+		object.Signature{Name: cfg.Git.AuthorName, Email: cfg.Git.AuthorEmail})
+	if err != nil {
+		return nil, err
+	}
+	return &deps{cfg: cfg, forge: f, exec: ex, store: store, ledger: led, env: envName}, nil
 }
 
 func newSyncCmd() *cobra.Command {
@@ -104,11 +111,11 @@ func newSyncCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := engine.Sync(cmd.Context(), d.cfg, d.env, d.forge, d.exec, d.store, engine.SyncOptions{DryRun: dryRun})
+			res, err := engine.Sync(cmd.Context(), d.cfg, d.env, d.forge, d.exec, d.store, d.ledger, engine.SyncOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
-			printChanges(cmd, res.Changes, res.Deployed)
+			printChanges(cmd, res.Changes, res.Deployed, res.Recovered)
 			return nil
 		},
 	}
@@ -127,9 +134,13 @@ func mustRequireEnvFlag(cmd *cobra.Command) {
 	}
 }
 
-func printChanges(cmd *cobra.Command, changes []pin.Change, deployed bool) {
+func printChanges(cmd *cobra.Command, changes []pin.Change, deployed, recovered bool) {
 	if len(changes) == 0 {
-		cmd.Println("up to date; no changes")
+		if recovered {
+			cmd.Println("recovered: redeployed the last committed pin set")
+		} else {
+			cmd.Println("up to date; no changes")
+		}
 		return
 	}
 	for _, c := range changes {
