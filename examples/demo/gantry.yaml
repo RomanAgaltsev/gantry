@@ -10,6 +10,12 @@ connections:
       user: deploy
       key: ${file:/run/secrets/app_ssh_key}
       known_hosts: ${file:/run/secrets/known_hosts}
+  prod-host:
+    address: 10.0.0.2
+    ssh:
+      user: deploy
+      key: ${file:/run/secrets/prod_ssh_key}
+      known_hosts: ${file:/run/secrets/known_hosts}
 components:
   - { id: api, project: demo/api, pin_key: API_IMAGE }
   - { id: web, project: demo/web, pin_key: WEB_IMAGE }
@@ -24,3 +30,12 @@ environments:
       project_dir: /opt/demo
       compose_files: [compose.yaml]
       env_file: .env.versions.test
+  - name: prod
+    source: { promote_from: test }
+    pin_file: .env.versions.prod
+    executor:
+      kind: compose-over-ssh
+      connection: prod-host
+      project_dir: /opt/app
+      compose_files: [compose.yaml]
+      env_file: .env.versions.prod
