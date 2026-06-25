@@ -3,6 +3,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,10 +13,19 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/pin"
 )
 
+// ErrNoHistory is returned when a pin file has no commit touching it.
+var ErrNoHistory = errors.New("pin file has no commit history")
+
+// ErrNoParent is returned when a commit has no parent (the first commit).
+var ErrNoParent = errors.New("commit has no parent")
+
 // PinStore reads and commits an environment's pin file.
 type PinStore interface {
 	Read(pinFile string) (pin.Set, error)
-	WriteAndCommit(pinFile string, s pin.Set, msg string) error
+	ReadAt(sha, pinFile string) (pin.Set, error)
+	WriteAndCommit(pinFile string, s pin.Set, msg string) (sha string, err error)
+	LatestCommit(pinFile string) (sha string, err error)
+	ParentOf(sha string) (parent string, err error)
 }
 
 // SyncOptions tunes a Sync run.
@@ -76,7 +86,7 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 	}
 
 	msg := commitMessage(envName, changes)
-	if err := store.WriteAndCommit(env.PinFile, merged, msg); err != nil {
+	if _, err := store.WriteAndCommit(env.PinFile, merged, msg); err != nil {
 		return SyncResult{}, err
 	}
 	if _, err := ex.Deploy(ctx, executor.Plan{Env: envName, PinFile: env.PinFile, Pins: merged}); err != nil {
