@@ -119,7 +119,7 @@ func TestSync_DeployFailureRecordsFailedSoNextSyncHeals(t *testing.T) {
 	_, err := Sync(context.Background(), cfg(), "test", f, &failExec{}, store, led, SyncOptions{})
 	require.Error(t, err)
 	// Pins were committed before the deploy attempt; the failure is recorded as "failed"
-	// keyed by the pin commit so the next Sync self-heals (decision A2-D7).
+	// keyed by the pin commit so the next Sync self-heals.
 	require.NotNil(t, store.committed)
 	require.Len(t, led.entries, 1)
 	require.Equal(t, "failed", led.entries[0].Result)
