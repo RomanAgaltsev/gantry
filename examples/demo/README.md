@@ -41,8 +41,17 @@ gantry plan --env test --config examples/demo/gantry.yaml
 # 3. Apply them: pin + commit-on-diff + deploy over SSH
 gantry sync --env test --config examples/demo/gantry.yaml
 
-# 4. Compare current pins against the latest available releases
+# 4. See the recorded ok deploy
+gantry history --env test --config examples/demo/gantry.yaml
+
+# 5. Compare current pins against the latest available releases
 gantry status --env test --config examples/demo/gantry.yaml
+
+# 6. Snapshot the green test set into prod
+gantry promote --from test --to prod --config examples/demo/gantry.yaml
+
+# 7. Revert prod to its previous set
+gantry rollback --env prod --config examples/demo/gantry.yaml
 ```
 
 `plan` prints lines like `API_IMAGE: reg/api:v1.3.0 -> reg/api:v1.4.0`, or
