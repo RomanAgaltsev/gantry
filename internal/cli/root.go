@@ -20,6 +20,7 @@ func NewRootCmd() *cobra.Command {
 		newDeployCmd(),
 		newPromoteCmd(),
 		newRollbackCmd(),
+		newHistoryCmd(),
 	)
 
 	return root
