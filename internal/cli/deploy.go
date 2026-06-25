@@ -16,7 +16,7 @@ func newDeployCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := engine.Deploy(cmd.Context(), d.cfg, d.env, d.exec, d.store)
+			res, err := engine.Deploy(cmd.Context(), d.cfg, d.env, d.exec, d.store, d.ledger)
 			if err != nil {
 				return err
 			}
@@ -27,6 +27,6 @@ func newDeployCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&envName, "env", "", "environment name")
-	mustRequireEnvFlag(cmd)
+	mustRequireFlag(cmd, "env")
 	return cmd
 }
