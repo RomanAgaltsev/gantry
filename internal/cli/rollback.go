@@ -1,0 +1,36 @@
+package cli
+
+import (
+	"github.com/spf13/cobra"
+
+	"github.com/RomanAgaltsev/gantry/internal/engine"
+)
+
+func newRollbackCmd() *cobra.Command {
+	var envName string
+	var dryRun bool
+	cmd := &cobra.Command{
+		Use:   "rollback",
+		Short: "Roll an environment back to its previous pin set",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			d, err := buildDeps(cmd, envName, !dryRun)
+			if err != nil {
+				return err
+			}
+			res, err := engine.Rollback(cmd.Context(), d.cfg, envName, d.exec, d.store, d.ledger, engine.RollbackOptions{DryRun: dryRun})
+			if err != nil {
+				return err
+			}
+			if res.DryRun {
+				cmd.Printf("would roll back %s to %.7s (%d pins)\n", envName, res.ToSHA, len(res.Pins))
+				return nil
+			}
+			cmd.Printf("rolled back %s to %.7s; deployed %d pins\n", envName, res.ToSHA, len(res.Pins))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&envName, "env", "", "environment name")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would be rolled back without acting")
+	_ = cmd.MarkFlagRequired("env")
+	return cmd
+}

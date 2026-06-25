@@ -42,7 +42,7 @@ type SyncResult struct {
 
 // Sync resolves each component's latest release into the environment's pin file
 // (commit-on-diff) and deploys via ex. With no diff it still ensures the latest pin
-// commit has a green ledger entry, redeploying if not (decision A2-D7).
+// commit has a green ledger entry, redeploying if not.
 func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge, ex executor.Executor, store PinStore, led ledger.Ledger, opts SyncOptions) (SyncResult, error) {
 	env, ok := cfg.Environment(envName)
 	if !ok {
@@ -254,4 +254,60 @@ func Promote(ctx context.Context, cfg *config.Config, fromEnv, toEnv, sha string
 		return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA}, err
 	}
 	return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA, Deployed: true}, nil
+}
+
+// RollbackOptions tunes a Rollback run.
+type RollbackOptions struct{ DryRun bool }
+
+// RollbackResult reports what a Rollback did.
+type RollbackResult struct {
+	ToSHA     string  // the parent commit whose pins were restored
+	Pins      pin.Set // the restored pin set
+	Committed string  // the new commit recording the rollback
+	Deployed  bool
+	DryRun    bool
+}
+
+// Rollback restores env's pin file to the state at the parent of its last pin commit
+// (a logical revert, commits it, deploys, and records the outcome.
+// Immutable image tags keep the previous images addressable.
+func Rollback(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, store PinStore, led ledger.Ledger, opts RollbackOptions) (RollbackResult, error) {
+	env, ok := cfg.Environment(envName)
+	if !ok {
+		return RollbackResult{}, fmt.Errorf("environment %q not found", envName)
+	}
+	last, err := store.LatestCommit(env.PinFile)
+	if errors.Is(err, ErrNoHistory) {
+		return RollbackResult{}, fmt.Errorf("environment %q has no pin history to roll back", envName)
+	}
+	if err != nil {
+		return RollbackResult{}, err
+	}
+	parent, err := store.ParentOf(last)
+	if errors.Is(err, ErrNoParent) {
+		return RollbackResult{}, fmt.Errorf("environment %q is at its first pin commit; nothing to roll back to", envName)
+	}
+	if err != nil {
+		return RollbackResult{}, err
+	}
+	pins, err := store.ReadAt(parent, env.PinFile)
+	if err != nil {
+		return RollbackResult{}, err
+	}
+	if len(pins) == 0 {
+		return RollbackResult{}, fmt.Errorf("parent pin set is empty; refusing to roll back %q to an empty stack", envName)
+	}
+	if opts.DryRun {
+		return RollbackResult{ToSHA: parent, Pins: pins, DryRun: true}, nil
+	}
+
+	msg := fmt.Sprintf("chore(%s): rollback to %.7s (%d pins)", envName, parent, len(pins))
+	newSHA, err := store.WriteAndCommit(env.PinFile, pins, msg)
+	if err != nil {
+		return RollbackResult{}, err
+	}
+	if err := deployAndRecord(ctx, envName, env.PinFile, pins, newSHA, "rollback", ex, led); err != nil {
+		return RollbackResult{ToSHA: parent, Pins: pins, Committed: newSHA}, err
+	}
+	return RollbackResult{ToSHA: parent, Pins: pins, Committed: newSHA, Deployed: true}, nil
 }

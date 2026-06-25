@@ -19,7 +19,9 @@ func NewRootCmd() *cobra.Command {
 		newStatusCmd(),
 		newDeployCmd(),
 		newPromoteCmd(),
+		newRollbackCmd(),
 	)
+
 	return root
 }
 
