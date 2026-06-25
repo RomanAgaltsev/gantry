@@ -31,6 +31,6 @@ func newRollbackCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&envName, "env", "", "environment name")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would be rolled back without acting")
-	_ = cmd.MarkFlagRequired("env")
+	mustRequireFlag(cmd, "env")
 	return cmd
 }
