@@ -13,6 +13,8 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"github.com/RomanAgaltsev/gantry/internal/gitutil"
 )
 
 const ledgerRelPath = ".gantry/deploys.jsonl"
@@ -36,6 +38,13 @@ func (l *gitLedger) abs() string { return filepath.Join(l.repoDir, filepath.From
 
 // Record appends one JSON line to the ledger file and commits it.
 func (l *gitLedger) Record(e Entry) error {
+	wt, err := l.repo.Worktree()
+	if err != nil {
+		return err
+	}
+	if err := gitutil.AssertOwnsIndex(wt, ledgerRelPath); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(l.abs()), 0o750); err != nil {
 		return fmt.Errorf("create ledger dir: %w", err)
 	}
@@ -54,10 +63,6 @@ func (l *gitLedger) Record(e Entry) error {
 		return fmt.Errorf("close ledger: %w", err)
 	}
 
-	wt, err := l.repo.Worktree()
-	if err != nil {
-		return err
-	}
 	if _, err := wt.Add(ledgerRelPath); err != nil {
 		return fmt.Errorf("git add ledger: %w", err)
 	}
