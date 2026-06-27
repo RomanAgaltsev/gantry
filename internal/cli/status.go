@@ -17,7 +17,7 @@ func newStatusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "Show current pins vs. latest releases",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			d, err := buildDeps(cmd, envName, false)
+			d, err := buildDeps(cmd, envName, true, false)
 			if err != nil {
 				return err
 			}
