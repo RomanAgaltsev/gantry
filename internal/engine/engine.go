@@ -185,6 +185,12 @@ func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha
 		By:          by,
 	})
 	if deployErr != nil {
+		// Surface a failed outcome-record too: losing it would also lose the self-heal
+		// signal the next Sync reads, so the failure must not be silent.
+		if recErr != nil {
+			return errors.Join(fmt.Errorf("deploy %q: %w", env, deployErr),
+				fmt.Errorf("record outcome: %w", recErr))
+		}
 		return fmt.Errorf("deploy %q: %w", env, deployErr)
 	}
 	return recErr

@@ -68,10 +68,18 @@ func (s *fakeStore) ParentOf(sha string) (string, error) {
 }
 
 type fakeLedger struct {
-	entries []ledger.Entry
+	entries   []ledger.Entry
+	recordErr error // when set, Record fails with it
 }
 
-func (l *fakeLedger) Record(e ledger.Entry) error { l.entries = append(l.entries, e); return nil }
+func (l *fakeLedger) Record(e ledger.Entry) error {
+	if l.recordErr != nil {
+		return l.recordErr
+	}
+	l.entries = append(l.entries, e)
+	return nil
+}
+
 func (l *fakeLedger) Lookup(env, sha string) (ledger.Entry, bool, error) {
 	for i := len(l.entries) - 1; i >= 0; i-- {
 		if l.entries[i].Environment == env && l.entries[i].PinCommit == sha {
@@ -134,6 +142,17 @@ func TestSync_DeployFailureRecordsFailedSoNextSyncHeals(t *testing.T) {
 	require.Equal(t, "failed", led.entries[0].Result)
 	require.Equal(t, "newsha", led.entries[0].PinCommit)
 	require.Equal(t, "sync", led.entries[0].By)
+}
+
+func TestSync_DeployAndRecordBothFail_SurfacesBoth(t *testing.T) {
+	f := fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v2"}}
+	store := &fakeStore{cur: pin.Set{"SVC_IMAGE": "reg/svc:v1"}}
+	led := &fakeLedger{recordErr: stringError("ledger write failed")}
+
+	_, err := Sync(context.Background(), cfg(), "test", f, &failExec{}, store, led, SyncOptions{})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "ssh down")     // the deploy failure
+	require.ErrorContains(t, err, "ledger write") // the record failure is not dropped
 }
 
 func TestSync_NilExecutorErrorsNotPanics(t *testing.T) {
