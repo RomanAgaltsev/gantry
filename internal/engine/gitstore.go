@@ -99,6 +99,17 @@ func (s *gitStore) ParentOf(sha string) (string, error) {
 	return commit.ParentHashes[0].String(), nil
 }
 
+// Resolve expands a revision (short SHA, full SHA, branch, or tag) to a full commit SHA.
+// It lets callers accept the abbreviated SHAs operators copy from `git log` / `gantry
+// history` instead of demanding the full 40-character form.
+func (s *gitStore) Resolve(rev string) (string, error) {
+	h, err := s.repo.ResolveRevision(plumbing.Revision(rev))
+	if err != nil {
+		return "", fmt.Errorf("resolve revision %q: %w", rev, err)
+	}
+	return h.String(), nil
+}
+
 // WriteAndCommit writes pinFile, stages it, and commits, returning the new commit SHA.
 func (s *gitStore) WriteAndCommit(pinFile string, set pin.Set, msg string) (string, error) {
 	wt, err := s.repo.Worktree()
