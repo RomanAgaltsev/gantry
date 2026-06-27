@@ -1,6 +1,6 @@
-// Package ledger records and quieries the outcome of every deploy ganrty performs.
+// Package ledger records and queries the outcome of every deploy gantry performs.
 // It is gantry's source of truth for "what was deployed to an environment and did it
-// succeed" - the gate for promotion abd the basis for rollback, drift and status.
+// succeed" - the gate for promotion and the basis for rollback, drift, and status.
 package ledger
 
 import (
@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// ErrNoGreen = is returned by LatestGreen when an environment has no ok deploy record.
+// ErrNoGreen is returned by LatestGreen when an environment has no ok deploy record.
 var ErrNoGreen = errors.New("no green deploy recorded")
 
 // Entry is one deploy outcome, append-only, keyed by (Environment, PinCommit).
@@ -34,7 +34,7 @@ type Ledger interface {
 	History(env string) ([]Entry, error)
 }
 
-// lookup returns the most recent entry matching (env. sha). Append-only, latest-wins.
+// lookup returns the most recent entry matching (env, sha). Append-only, latest-wins.
 // It scans from the tail so a retried deploy's fresh entry supersedes an earlier one.
 func lookup(entries []Entry, env, sha string) (Entry, bool) {
 	for i := len(entries) - 1; i >= 0; i-- {
