@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.1](https://github.com/RomanAgaltsev/gantry/compare/v0.3.0...v0.3.1) (2026-06-27)
+
+
+### Bug Fixes
+
+* **cli:** only resolve forge and registry secrets when a command needs them ([e3c0d88](https://github.com/RomanAgaltsev/gantry/commit/e3c0d88c1db24c1be70ba2e4d1adf8f2342a2236))
+* dry-run recovery wording, ledger doc typos, runbook, test filename ([299b3b6](https://github.com/RomanAgaltsev/gantry/commit/299b3b69df24fedede68aaee2863dbc7ea20bb1d))
+* **engine,cli:** surface post-commit deploy failures and off-DAG promotes ([cbd6f3f](https://github.com/RomanAgaltsev/gantry/commit/cbd6f3f70dc7deddf31e37d190dd4735644936d4))
+* **git:** refuse to commit when other files are staged ([1c84f36](https://github.com/RomanAgaltsev/gantry/commit/1c84f36f0b1e8b0f02762f8cc763748a6a135369))
+* **promote:** accept short SHAs for --sha ([85782b8](https://github.com/RomanAgaltsev/gantry/commit/85782b84c538b7cde9427dcaff2945ef97d64734))
+* review findings ([ca53c55](https://github.com/RomanAgaltsev/gantry/commit/ca53c555430153b71a0f47f3ec3ecf446123e0cd))
+* **rollback:** target the last known-good ledger entry, not the parent commit ([4957d99](https://github.com/RomanAgaltsev/gantry/commit/4957d990264265998d64c72deff2aa7d8707e5db))
+
 ## [0.3.0](https://github.com/RomanAgaltsev/gantry/compare/v0.2.0...v0.3.0) (2026-06-25)
 
 
