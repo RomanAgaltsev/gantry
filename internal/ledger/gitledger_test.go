@@ -51,6 +51,24 @@ func TestGitLedger_RecordThenQuery(t *testing.T) {
 	require.Equal(t, "aaa", green.PinCommit)
 }
 
+func TestGitLedger_Record_RefusesPreStagedFile(t *testing.T) {
+	dir := newRepo(t)
+	l, err := NewGitLedger(dir, sig())
+	require.NoError(t, err)
+	require.NoError(t, l.Record(Entry{Environment: "test", PinCommit: "aaa", Result: "ok", By: "sync"}))
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "user.txt"), []byte("x"), 0o600))
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	_, err = wt.Add("user.txt")
+	require.NoError(t, err)
+
+	err = l.Record(Entry{Environment: "test", PinCommit: "bbb", Result: "ok", By: "sync"})
+	require.ErrorContains(t, err, "user.txt")
+}
+
 func TestGitLedger_LatestGreen_None(t *testing.T) {
 	dir := newRepo(t)
 	l, _ := NewGitLedger(dir, sig())
