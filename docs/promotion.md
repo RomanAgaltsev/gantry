@@ -41,16 +41,21 @@ Promotion is wholesale — the full set that was green together moves in one com
 
 ## Rollback
 
-`rollback` restores an environment's previous pin set (the state at the parent of its
-last pin commit), commits it, and redeploys:
+`rollback` restores an environment to its **last known-good** set — the most recent
+`ok` ledger entry older than the current pin commit — commits it, and redeploys:
 
 ```bash
 gantry rollback --env prod
 gantry rollback --env prod --dry-run
 ```
 
-Immutable image tags keep the previous images pullable, so rollback is just a forward
-deploy of an earlier, already-green set.
+Because the target comes from the ledger (not the literal parent commit), rollback never
+redeploys a set the ledger recorded as `failed`, and running it again walks further back
+through good states rather than oscillating onto the bad one. If the environment already
+holds the target set, rollback redeploys it without making an empty commit. gantry refuses
+to roll back when there is no earlier green deploy on record. Immutable image tags keep the
+previous images pullable, so rollback is just a forward deploy of an earlier, already-green
+set.
 
 ## Self-healing sync
 
