@@ -37,6 +37,18 @@ func TestPromote_DefaultGreenSHA(t *testing.T) {
 	require.Equal(t, "newsha", last.PinCommit)
 }
 
+func TestPromote_ResolvesShortSHA(t *testing.T) {
+	store := &fakeStore{
+		atSHA:   map[string]pin.Set{"fullsha": {"SVC_IMAGE": "reg/svc:v2"}},
+		resolve: map[string]string{"short": "fullsha"},
+	}
+	led := &fakeLedger{entries: []ledger.Entry{{Environment: "test", PinCommit: "fullsha", Result: "ok"}}}
+
+	res, err := Promote(context.Background(), promoteCfg(), "test", "prod", "short", &fakeExec{}, store, led, PromoteOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "fullsha", res.FromSHA) // gate + snapshot used the resolved full SHA
+}
+
 func TestPromote_RefusesMissingGate(t *testing.T) {
 	store := &fakeStore{atSHA: map[string]pin.Set{"x": {"SVC_IMAGE": "reg/svc:v2"}}}
 	led := &fakeLedger{} // no entry for (test, x)
