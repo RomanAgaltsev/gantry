@@ -28,6 +28,8 @@ type PinStore interface {
 	WriteAndCommit(pinFile string, s pin.Set, msg string) (sha string, err error)
 	LatestCommit(pinFile string) (sha string, err error)
 	ParentOf(sha string) (parent string, err error)
+	// Resolve expands a revision (a short SHA, full SHA, or ref) to a full commit SHA.
+	Resolve(rev string) (sha string, err error)
 }
 
 // SyncOptions tunes a Sync run.
@@ -222,6 +224,11 @@ func Promote(ctx context.Context, cfg *config.Config, fromEnv, toEnv, sha string
 		}
 		sha = green.PinCommit
 	} else {
+		full, err := store.Resolve(sha)
+		if err != nil {
+			return PromoteResult{}, fmt.Errorf("resolve --sha %q: %w", sha, err)
+		}
+		sha = full
 		entry, ok, err := led.Lookup(fromEnv, sha)
 		if err != nil {
 			return PromoteResult{}, err

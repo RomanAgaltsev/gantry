@@ -28,9 +28,18 @@ type fakeStore struct {
 	headSHA   string             // LatestCommit returns this
 	atSHA     map[string]pin.Set // ReadAt lookups
 	parent    map[string]string  // ParentOf lookups
+	resolve   map[string]string  // Resolve lookups (unmapped revs return unchanged)
 }
 
 func (s *fakeStore) Read(string) (pin.Set, error) { return s.cur, nil }
+
+func (s *fakeStore) Resolve(rev string) (string, error) {
+	if full, ok := s.resolve[rev]; ok {
+		return full, nil
+	}
+	return rev, nil
+}
+
 func (s *fakeStore) ReadAt(sha, _ string) (pin.Set, error) {
 	if p, ok := s.atSHA[sha]; ok {
 		return p, nil
