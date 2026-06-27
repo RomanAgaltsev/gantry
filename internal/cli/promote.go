@@ -17,8 +17,16 @@ func newPromoteCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if env, ok := d.cfg.Environment(toEnv); ok {
+				if w := promoteDAGWarning(toEnv, env.Source.PromoteFrom, fromEnv); w != "" {
+					cmd.PrintErrln(w)
+				}
+			}
 			res, err := engine.Promote(cmd.Context(), d.cfg, fromEnv, toEnv, sha, d.exec, d.store, d.ledger, engine.PromoteOptions{DryRun: dryRun})
 			if err != nil {
+				if hint := deployFailureHint(toEnv, res.Committed); hint != "" {
+					cmd.PrintErrln(hint)
+				}
 				return err
 			}
 			if res.DryRun {
