@@ -26,10 +26,12 @@ type deps struct {
 	env    string
 }
 
-// buildDeps wires the engine's collaborators from config. The SSH executor is
-// built only when needExec is true (an actual deploy); read-only commands
-// (plan, status, sync --dry-run) skip it so they never require usable SSH creds.
-func buildDeps(cmd *cobra.Command, envName string, needExec bool) (*deps, error) {
+// buildDeps wires the engine's collaborators from config. The forge is built only when
+// needForge is true (sync/plan/status), and the SSH executor only when needExec is true
+// (an actual deploy). Read-only or forge-free commands (history, promote, rollback) skip
+// the secrets they do not use, so e.g. `gantry history` never resolves a forge token or
+// registry credential.
+func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*deps, error) {
 	path, err := cmd.Flags().GetString("config")
 	if err != nil {
 		return nil, err
@@ -43,28 +45,23 @@ func buildDeps(cmd *cobra.Command, envName string, needExec bool) (*deps, error)
 		return nil, fmt.Errorf("environment %q not found", envName)
 	}
 	res := config.DefaultResolver()
-	token, err := res.Resolve(cfg.Forge.Token)
-	if err != nil {
-		return nil, err
-	}
-	f := gitlab.New(cfg.Forge.BaseURL, token, cfg.Forge.MetadataMarker, nil)
 
-	var logins []composessh.RegistryLogin
-	for host, reg := range cfg.Registries {
-		u, err := res.Resolve(reg.User)
+	var f forge.Forge
+	if needForge {
+		token, err := res.Resolve(cfg.Forge.Token)
 		if err != nil {
 			return nil, err
 		}
-		pw, err := res.Resolve(reg.Password)
-		if err != nil {
-			return nil, err
-		}
-		logins = append(logins, composessh.RegistryLogin{Registry: host, Username: u, Password: pw})
+		f = gitlab.New(cfg.Forge.BaseURL, token, cfg.Forge.MetadataMarker, nil)
 	}
 
 	conn := cfg.Connections[env.Executor.Connection]
 	var ex executor.Executor
 	if needExec && conn.SSH != nil {
+		logins, err := resolveLogins(res, cfg.Registries)
+		if err != nil {
+			return nil, err
+		}
 		key, err := res.Resolve(conn.SSH.Key)
 		if err != nil {
 			return nil, err
@@ -100,6 +97,23 @@ func buildDeps(cmd *cobra.Command, envName string, needExec bool) (*deps, error)
 	return &deps{cfg: cfg, forge: f, exec: ex, store: store, ledger: led, env: envName}, nil
 }
 
+// resolveLogins resolves each registry's credentials for the executor to log in with.
+func resolveLogins(res config.SecretResolver, registries map[string]config.Registry) ([]composessh.RegistryLogin, error) {
+	var logins []composessh.RegistryLogin
+	for host, reg := range registries {
+		u, err := res.Resolve(reg.User)
+		if err != nil {
+			return nil, err
+		}
+		pw, err := res.Resolve(reg.Password)
+		if err != nil {
+			return nil, err
+		}
+		logins = append(logins, composessh.RegistryLogin{Registry: host, Username: u, Password: pw})
+	}
+	return logins, nil
+}
+
 func newSyncCmd() *cobra.Command {
 	var envName string
 	var dryRun bool
@@ -107,7 +121,7 @@ func newSyncCmd() *cobra.Command {
 		Use:   "sync",
 		Short: "Consume releases, pin, and deploy an environment",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			d, err := buildDeps(cmd, envName, !dryRun)
+			d, err := buildDeps(cmd, envName, true, !dryRun)
 			if err != nil {
 				return err
 			}

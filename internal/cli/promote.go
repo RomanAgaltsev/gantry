@@ -13,7 +13,7 @@ func newPromoteCmd() *cobra.Command {
 		Use:   "promote",
 		Short: "Promote a verified pin set from one environment to another",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			d, err := buildDeps(cmd, toEnv, !dryRun)
+			d, err := buildDeps(cmd, toEnv, false, !dryRun)
 			if err != nil {
 				return err
 			}
