@@ -150,11 +150,7 @@ func mustRequireFlag(cmd *cobra.Command, name string) {
 
 func printChanges(cmd *cobra.Command, changes []pin.Change, deployed, recovered bool) {
 	if len(changes) == 0 {
-		if recovered {
-			cmd.Println("recovered: redeployed the last committed pin set")
-		} else {
-			cmd.Println("up to date; no changes")
-		}
+		cmd.Println(upToDateMessage(deployed, recovered))
 		return
 	}
 	for _, c := range changes {
@@ -162,5 +158,18 @@ func printChanges(cmd *cobra.Command, changes []pin.Change, deployed, recovered 
 	}
 	if deployed {
 		cmd.Println("deployed")
+	}
+}
+
+// upToDateMessage renders the no-changes line for sync/plan. A recovery with no deploy is
+// a dry run (plan, or sync --dry-run): it must read as a prediction, not a past action.
+func upToDateMessage(deployed, recovered bool) string {
+	switch {
+	case recovered && deployed:
+		return "recovered: redeployed the last committed pin set"
+	case recovered:
+		return "would redeploy the last committed pin set (not yet green)"
+	default:
+		return "up to date; no changes"
 	}
 }
