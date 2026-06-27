@@ -109,6 +109,44 @@ func TestGitStore_ParentOf_FirstCommit(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoParent)
 }
 
+func TestGitStore_Resolve_ShortSHA(t *testing.T) {
+	_, store := newPinRepo(t)
+	full, err := store.WriteAndCommit(".env.versions.test", pin.Set{"A": "v1"}, "pin v1")
+	require.NoError(t, err)
+
+	got, err := store.Resolve(full[:8])
+	require.NoError(t, err)
+	require.Equal(t, full, got)
+}
+
+func TestGitStore_Resolve_Unknown(t *testing.T) {
+	_, store := newPinRepo(t)
+	_, err := store.WriteAndCommit(".env.versions.test", pin.Set{"A": "v1"}, "pin v1")
+	require.NoError(t, err)
+
+	_, err = store.Resolve("deadbeef")
+	require.Error(t, err)
+}
+
+// gantry must refuse to commit when an unrelated file is already staged, because go-git
+// builds the commit from the whole index and would otherwise sweep it in.
+func TestGitStore_WriteAndCommit_RefusesPreStagedFile(t *testing.T) {
+	dir, store := newPinRepo(t)
+	_, err := store.WriteAndCommit(".env.versions.test", pin.Set{"A": "v1"}, "pin v1")
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "user.txt"), []byte("x"), 0o600))
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	_, err = wt.Add("user.txt")
+	require.NoError(t, err)
+
+	_, err = store.WriteAndCommit(".env.versions.test", pin.Set{"A": "v2"}, "pin v2")
+	require.ErrorContains(t, err, "user.txt")
+}
+
 // path-filtered history must skip unrelated commits between pin changes
 func TestGitStore_LatestCommit_SkipsUnrelated(t *testing.T) {
 	dir, store := newPinRepo(t)

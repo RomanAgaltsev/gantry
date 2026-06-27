@@ -28,6 +28,8 @@ type PinStore interface {
 	WriteAndCommit(pinFile string, s pin.Set, msg string) (sha string, err error)
 	LatestCommit(pinFile string) (sha string, err error)
 	ParentOf(sha string) (parent string, err error)
+	// Resolve expands a revision (a short SHA, full SHA, or ref) to a full commit SHA.
+	Resolve(rev string) (sha string, err error)
 }
 
 // SyncOptions tunes a Sync run.
@@ -183,9 +185,35 @@ func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha
 		By:          by,
 	})
 	if deployErr != nil {
+		// Surface a failed outcome-record too: losing it would also lose the self-heal
+		// signal the next Sync reads, so the failure must not be silent.
+		if recErr != nil {
+			return errors.Join(fmt.Errorf("deploy %q: %w", env, deployErr),
+				fmt.Errorf("record outcome: %w", recErr))
+		}
 		return fmt.Errorf("deploy %q: %w", env, deployErr)
 	}
 	return recErr
+}
+
+// pinsEqual reports whether two pin sets hold exactly the same keys and values.
+func pinsEqual(a, b pin.Set) bool {
+	return len(a) == len(b) && len(pin.Diff(a, b)) == 0
+}
+
+// writePins commits pins to pinFile, returning the resulting commit SHA. When the file
+// already holds exactly these pins it makes no commit (go-git rejects empty commits) and
+// returns the existing latest commit instead, keeping a re-promote or a repeat rollback a
+// redeploy rather than an empty commit.
+func writePins(store PinStore, pinFile string, pins pin.Set, msg string) (string, error) {
+	current, err := store.Read(pinFile)
+	if err != nil {
+		return "", err
+	}
+	if pinsEqual(current, pins) {
+		return store.LatestCommit(pinFile)
+	}
+	return store.WriteAndCommit(pinFile, pins, msg)
 }
 
 // PromoteOptions tunes a Promote run.
@@ -222,6 +250,11 @@ func Promote(ctx context.Context, cfg *config.Config, fromEnv, toEnv, sha string
 		}
 		sha = green.PinCommit
 	} else {
+		full, err := store.Resolve(sha)
+		if err != nil {
+			return PromoteResult{}, fmt.Errorf("resolve --sha %q: %w", sha, err)
+		}
+		sha = full
 		entry, ok, err := led.Lookup(fromEnv, sha)
 		if err != nil {
 			return PromoteResult{}, err
@@ -246,7 +279,7 @@ func Promote(ctx context.Context, cfg *config.Config, fromEnv, toEnv, sha string
 	}
 
 	msg := fmt.Sprintf("chore(%s): promote from %s@%.7s (%d pins)", toEnv, fromEnv, sha, len(pins))
-	newSHA, err := store.WriteAndCommit(to.PinFile, pins, msg)
+	newSHA, err := writePins(store, to.PinFile, pins, msg)
 	if err != nil {
 		return PromoteResult{}, err
 	}
@@ -261,16 +294,18 @@ type RollbackOptions struct{ DryRun bool }
 
 // RollbackResult reports what a Rollback did.
 type RollbackResult struct {
-	ToSHA     string  // the parent commit whose pins were restored
+	ToSHA     string  // the green pin commit whose set was restored
 	Pins      pin.Set // the restored pin set
-	Committed string  // the new commit recording the rollback
+	Committed string  // the new commit recording the rollback (or the existing one if unchanged)
 	Deployed  bool
 	DryRun    bool
 }
 
-// Rollback restores env's pin file to the state at the parent of its last pin commit
-// (a logical revert, commits it, deploys, and records the outcome.
-// Immutable image tags keep the previous images addressable.
+// Rollback restores env to the most recent GREEN deploy older than its current pin commit,
+// commits that set, deploys, and records the outcome. Targeting the last known-good ledger
+// entry (rather than the literal parent commit) means rollback never redeploys a set the
+// ledger knows failed, and repeated rollbacks walk backward through good states instead of
+// oscillating onto the bad one. Immutable image tags keep the previous images addressable.
 func Rollback(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, store PinStore, led ledger.Ledger, opts RollbackOptions) (RollbackResult, error) {
 	env, ok := cfg.Environment(envName)
 	if !ok {
@@ -283,31 +318,38 @@ func Rollback(ctx context.Context, cfg *config.Config, envName string, ex execut
 	if err != nil {
 		return RollbackResult{}, err
 	}
-	parent, err := store.ParentOf(last)
-	if errors.Is(err, ErrNoParent) {
-		return RollbackResult{}, fmt.Errorf("environment %q is at its first pin commit; nothing to roll back to", envName)
-	}
+	hist, err := led.History(envName)
 	if err != nil {
 		return RollbackResult{}, err
 	}
-	pins, err := store.ReadAt(parent, env.PinFile)
+	target := ""
+	for _, e := range hist {
+		if e.Result == "ok" && e.PinCommit != last {
+			target = e.PinCommit
+			break
+		}
+	}
+	if target == "" {
+		return RollbackResult{}, fmt.Errorf("no earlier green deploy of %q to roll back to", envName)
+	}
+	pins, err := store.ReadAt(target, env.PinFile)
 	if err != nil {
 		return RollbackResult{}, err
 	}
 	if len(pins) == 0 {
-		return RollbackResult{}, fmt.Errorf("parent pin set is empty; refusing to roll back %q to an empty stack", envName)
+		return RollbackResult{}, fmt.Errorf("pin set at %.7s is empty; refusing to roll back %q to an empty stack", target, envName)
 	}
 	if opts.DryRun {
-		return RollbackResult{ToSHA: parent, Pins: pins, DryRun: true}, nil
+		return RollbackResult{ToSHA: target, Pins: pins, DryRun: true}, nil
 	}
 
-	msg := fmt.Sprintf("chore(%s): rollback to %.7s (%d pins)", envName, parent, len(pins))
-	newSHA, err := store.WriteAndCommit(env.PinFile, pins, msg)
+	msg := fmt.Sprintf("chore(%s): rollback to %.7s (%d pins)", envName, target, len(pins))
+	newSHA, err := writePins(store, env.PinFile, pins, msg)
 	if err != nil {
-		return RollbackResult{}, err
+		return RollbackResult{ToSHA: target, Pins: pins}, err
 	}
 	if err := deployAndRecord(ctx, envName, env.PinFile, pins, newSHA, "rollback", ex, led); err != nil {
-		return RollbackResult{ToSHA: parent, Pins: pins, Committed: newSHA}, err
+		return RollbackResult{ToSHA: target, Pins: pins, Committed: newSHA}, err
 	}
-	return RollbackResult{ToSHA: parent, Pins: pins, Committed: newSHA, Deployed: true}, nil
+	return RollbackResult{ToSHA: target, Pins: pins, Committed: newSHA, Deployed: true}, nil
 }

@@ -12,7 +12,7 @@ func newPlanCmd() *cobra.Command {
 		Use:   "plan",
 		Short: "Show pending pin changes (read-only)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			d, err := buildDeps(cmd, envName, false)
+			d, err := buildDeps(cmd, envName, true, false)
 			if err != nil {
 				return err
 			}

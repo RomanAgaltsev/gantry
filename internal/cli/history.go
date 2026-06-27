@@ -10,7 +10,7 @@ func newHistoryCmd() *cobra.Command {
 		Use:   "history",
 		Short: "Show the deploy-outcome ledger for an environment (newest first)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			d, err := buildDeps(cmd, envName, false) // read-only: no executor needed
+			d, err := buildDeps(cmd, envName, false, false) // read-only: no forge or executor needed
 			if err != nil {
 				return err
 			}
