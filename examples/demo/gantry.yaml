@@ -3,6 +3,8 @@ forge:
   base_url: https://gitlab.example.com
   token: ${env:GANTRY_FORGE_TOKEN}
   metadata_marker: gantry-release-metadata
+drift:
+  threshold: 7d
 connections:
   app-host:
     address: 192.0.2.10
