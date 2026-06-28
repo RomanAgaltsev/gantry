@@ -21,6 +21,7 @@ func NewRootCmd() *cobra.Command {
 		newPromoteCmd(),
 		newRollbackCmd(),
 		newHistoryCmd(),
+		newDriftCmd(),
 	)
 
 	return root
