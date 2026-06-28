@@ -16,6 +16,7 @@ type Config struct {
 	Environments []Environment         `yaml:"environments"`
 	Registries   map[string]Registry   `yaml:"registries"`
 	Git          GitConfig             `yaml:"git"`
+	Drift        DriftConfig           `yaml:"drift"`
 }
 
 // GitConfig sets the identity gantry stamps on the pin commits it makes.
