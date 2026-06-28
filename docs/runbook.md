@@ -25,6 +25,12 @@ gantry history --env test  # confirm the ok outcome
 `sync` is a no-op when nothing changed. If a previous deploy failed *after* its pin commit,
 `sync` reports `recovered` and redeploys automatically — no manual step needed.
 
+## Detect drift
+
+```bash
+gantry drift --env test   # one environment
+gantry drift --all        # every track-mode environment (CI gate)
+
 ## Promote `test` → `prod`
 
 ```bash
