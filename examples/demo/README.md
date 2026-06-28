@@ -86,6 +86,27 @@ gantry deploy --env test --config examples/demo/gantry.yaml
 Unlike `sync`, `deploy` does not consult the forge or write the pin file; it just
 deploys what is already committed.
 
+## Detecting drift
+
+The `drift:` block sets how long a published-but-unpinned release may sit before gantry
+calls it out. With `threshold: 7d`, once a component's latest GitLab Release has been
+available for more than seven days without its pin being updated, `gantry drift` reports
+it (the threshold also accepts `h`/`m` units, e.g. `72h`):
+
+```bash
+# Check one environment (read-only — no commit, no deploy)
+gantry drift --env test --config examples/demo/gantry.yaml
+
+# Check every track-mode environment — meant to run in CI
+gantry drift --all --config examples/demo/gantry.yaml
+```
+
+`drift` exits `0` when every pin is current and `3` when any tracked component has
+drifted, so a scheduled `gantry drift --all` turns an un-consumed release into a red
+build. Only track-mode environments are scanned, and explicit-pin components
+(`postgres`) are skipped — gantry has no notion of their "latest". See
+[../../docs/drift.md](../../docs/drift.md) for the full model.
+
 ## Adapting it
 
 To use this against your own fleet, edit `gantry.yaml`:
