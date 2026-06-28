@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.0](https://github.com/RomanAgaltsev/gantry/compare/v0.3.1...v0.4.0) (2026-06-28)
+
+
+### Features
+
+* **cli:** add gantry drift command with exit code 3 on detected drift ([f39e3e7](https://github.com/RomanAgaltsev/gantry/commit/f39e3e708b3c2e72e9fd3ee71008f6c0034fa732))
+* **config:** add drift.threshold with a day-aware duration type ([5c05c9f](https://github.com/RomanAgaltsev/gantry/commit/5c05c9f56bb5e576461f463a924725fea464bfab))
+* drift detector ([7a8244b](https://github.com/RomanAgaltsev/gantry/commit/7a8244bc83641cb7827132347f9a5a8bf76133b1))
+* **engine:** add read-only Drift detector keyed on release built_at age ([a18fa9f](https://github.com/RomanAgaltsev/gantry/commit/a18fa9f7aad6dcd8f09ceae33474642f20c5f560))
+
 ## [0.3.1](https://github.com/RomanAgaltsev/gantry/compare/v0.3.0...v0.3.1) (2026-06-27)
 
 
