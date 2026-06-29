@@ -260,9 +260,15 @@ func Promote(ctx context.Context, cfg *config.Config, fromEnv, toEnv, sha string
 	}
 
 	if sha == "" {
-		green, err := led.LatestGreen(fromEnv)
+		var green ledger.Entry
+		var err error
+		if cfg.Promote.RequireHealthy {
+			green, err = led.LatestHealthy(fromEnv)
+		} else {
+			green, err = led.LatestGreen(fromEnv)
+		}
 		if err != nil {
-			return PromoteResult{}, fmt.Errorf("no green deploy of %q to promote: %w", fromEnv, err)
+			return PromoteResult{}, fmt.Errorf("no %s deploy of %q to promote: %w", greenWord(cfg.Promote.RequireHealthy), fromEnv, err)
 		}
 		sha = green.PinCommit
 	} else {
@@ -280,6 +286,9 @@ func Promote(ctx context.Context, cfg *config.Config, fromEnv, toEnv, sha string
 		}
 		if entry.Result != "ok" {
 			return PromoteResult{}, fmt.Errorf("refusing to promote %q@%.7s: last deploy was %q, not ok (gate)", fromEnv, sha, entry.Result)
+		}
+		if cfg.Promote.RequireHealthy && entry.Healthy != "true" {
+			return PromoteResult{}, fmt.Errorf("refusing to promote %q@%.7s: not verified healthy (gate)", fromEnv, sha)
 		}
 	}
 
@@ -303,6 +312,14 @@ func Promote(ctx context.Context, cfg *config.Config, fromEnv, toEnv, sha string
 		return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA}, err
 	}
 	return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA, Deployed: true}, nil
+}
+
+// greenWord labels the gate requirement for error messages.
+func greenWord(requireHealthy bool) string {
+	if requireHealthy {
+		return "healthy"
+	}
+	return "green"
 }
 
 // RollbackOptions tunes a Rollback run.
