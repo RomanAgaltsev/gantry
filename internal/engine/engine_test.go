@@ -108,6 +108,15 @@ func (l *fakeLedger) History(env string) ([]ledger.Entry, error) {
 	return out, nil
 }
 
+func (l *fakeLedger) LatestHealthy(env string) (ledger.Entry, error) {
+	for i := len(l.entries) - 1; i >= 0; i-- {
+		if l.entries[i].Environment == env && l.entries[i].Result == "ok" && l.entries[i].Healthy == "true" {
+			return l.entries[i], nil
+		}
+	}
+	return ledger.Entry{}, ledger.ErrNoGreen
+}
+
 type fakeExec struct {
 	called bool
 	pins   pin.Set
