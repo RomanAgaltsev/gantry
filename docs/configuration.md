@@ -24,10 +24,23 @@ Selects and configures the forge adapter that releases are read from.
 
 | Field             | Type        | Required | Description |
 |-------------------|-------------|----------|-------------|
-| `kind`            | string      | yes      | Forge adapter. Slice 1 supports `gitlab` only; any other value is a validation error. |
+| `kind`            | string      | yes      | Forge adapter.  |
 | `base_url`        | string      | yes      | Base URL of the forge, e.g. `https://gitlab.example.com`. |
 | `token`           | SecretRef   | yes      | API token. GitLab needs `read_api` scope. See [SecretRef](#secretref). |
 | `metadata_marker` | string      | no       | Namespace of the release-metadata block embedded in release descriptions. Defaults to `gantry-release-metadata`. |
+
+### GitHub
+
+```yaml
+forge:
+  kind: github
+  # base_url defaults to https://api.github.com; for GitHub Enterprise use
+  # https://<host>/api/v3
+  token: ${env:GANTRY_FORGE_TOKEN}   # optional for public repos; omit to call anonymously
+  metadata_marker: gantry-release-metadata
+components:
+  - { id: api, project: octo/api, pin_key: API_IMAGE }   # project is owner/repo
+```
 
 ### The release-metadata block
 

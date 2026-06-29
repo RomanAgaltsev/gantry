@@ -12,7 +12,6 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/executor"
 	"github.com/RomanAgaltsev/gantry/internal/executor/composessh"
 	"github.com/RomanAgaltsev/gantry/internal/forge"
-	"github.com/RomanAgaltsev/gantry/internal/forge/gitlab"
 	"github.com/RomanAgaltsev/gantry/internal/ledger"
 	"github.com/RomanAgaltsev/gantry/internal/pin"
 )
@@ -52,7 +51,10 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 		if err != nil {
 			return nil, err
 		}
-		f = gitlab.New(cfg.Forge.BaseURL, token, cfg.Forge.MetadataMarker, nil)
+		f, err = newForge(cfg.Forge, token)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	conn := cfg.Connections[env.Executor.Connection]
