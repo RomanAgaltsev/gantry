@@ -54,6 +54,18 @@ Rollback targets the most recent `ok` ledger entry older than the current pin co
 never redeploys a set the ledger recorded as `failed`. Run it again to step further back
 through good states. It refuses when there is no earlier green deploy on record.
 
+## Blue/green: stage and switch
+
+```bash
+gantry sync   --env front   # stage the new version on the idle slot (live slot untouched)
+gantry switch --env front   # flip the pointer to the staged slot (gated on an ok deploy)
+gantry rollback --env front # flip back to the previous slot
+```
+
+`switch` refuses if the idle slot's last deploy is not `ok`. Both `switch` and `rollback`
+are recorded in the ledger (`by: switch` / `by: rollback`). See
+[blue-green.md](blue-green.md).
+
 ## A deploy failed — now what?
 
 A `sync`/`promote`/`rollback` whose deploy fails *after* its pin commit leaves the pins
