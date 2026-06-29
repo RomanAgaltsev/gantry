@@ -14,12 +14,14 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/forge"
 	"github.com/RomanAgaltsev/gantry/internal/ledger"
 	"github.com/RomanAgaltsev/gantry/internal/pin"
+	"github.com/RomanAgaltsev/gantry/internal/verify"
 )
 
 type deps struct {
 	cfg    *config.Config
 	forge  forge.Forge
 	exec   executor.Executor
+	verify verify.Verifier //nolint:unused // -
 	store  engine.PinStore
 	ledger ledger.Ledger
 	env    string
@@ -127,7 +129,7 @@ func newSyncCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := engine.Sync(cmd.Context(), d.cfg, d.env, d.forge, d.exec, d.store, d.ledger, engine.SyncOptions{DryRun: dryRun})
+			res, err := engine.Sync(cmd.Context(), d.cfg, d.env, d.forge, d.exec, nil, d.store, d.ledger, engine.SyncOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}

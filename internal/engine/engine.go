@@ -13,6 +13,7 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/forge"
 	"github.com/RomanAgaltsev/gantry/internal/ledger"
 	"github.com/RomanAgaltsev/gantry/internal/pin"
+	"github.com/RomanAgaltsev/gantry/internal/verify"
 )
 
 // ErrNoHistory is returned when a pin file has no commit touching it.
@@ -45,7 +46,7 @@ type SyncResult struct {
 // Sync resolves each component's latest release into the environment's pin file
 // (commit-on-diff) and deploys via ex. With no diff it still ensures the latest pin
 // commit has a green ledger entry, redeploying if not.
-func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge, ex executor.Executor, store PinStore, led ledger.Ledger, opts SyncOptions) (SyncResult, error) {
+func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge, ex executor.Executor, vf verify.Verifier, store PinStore, led ledger.Ledger, opts SyncOptions) (SyncResult, error) {
 	env, ok := cfg.Environment(envName)
 	if !ok {
 		return SyncResult{}, fmt.Errorf("environment %q not found", envName)
@@ -80,7 +81,7 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 
 	changes := pin.Diff(current, merged)
 	if len(changes) == 0 {
-		return ensureGreen(ctx, envName, env.PinFile, current, ex, store, led, opts)
+		return ensureGreen(ctx, envName, env.PinFile, current, ex, nil, store, led, opts)
 	}
 	if opts.DryRun {
 		return SyncResult{Changes: changes}, nil
@@ -90,7 +91,7 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 	if err != nil {
 		return SyncResult{}, err
 	}
-	if err := deployAndRecord(ctx, envName, env.PinFile, merged, sha, "sync", ex, led); err != nil {
+	if err := deployAndRecord(ctx, envName, env.PinFile, merged, sha, "sync", ex, nil, led); err != nil {
 		return SyncResult{Changes: changes}, err
 	}
 	return SyncResult{Changes: changes, Deployed: true}, nil
@@ -99,7 +100,7 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 // ensureGreen redeploys the current pins when the latest pin commit lacks a green
 // ledger entry; otherwise it is a no-op. This makes a deploy that failed after its
 // pin commit self-heal on the next Sync.
-func ensureGreen(ctx context.Context, envName, pinFile string, current pin.Set, ex executor.Executor, store PinStore, led ledger.Ledger, opts SyncOptions) (SyncResult, error) {
+func ensureGreen(ctx context.Context, envName, pinFile string, current pin.Set, ex executor.Executor, _ verify.Verifier, store PinStore, led ledger.Ledger, opts SyncOptions) (SyncResult, error) {
 	sha, err := store.LatestCommit(pinFile)
 	if errors.Is(err, ErrNoHistory) {
 		return SyncResult{}, nil // nothing was ever committed; nothing to ensure
@@ -117,7 +118,7 @@ func ensureGreen(ctx context.Context, envName, pinFile string, current pin.Set, 
 	if opts.DryRun {
 		return SyncResult{Recovered: true}, nil
 	}
-	if err := deployAndRecord(ctx, envName, pinFile, current, sha, "sync", ex, led); err != nil {
+	if err := deployAndRecord(ctx, envName, pinFile, current, sha, "sync", ex, nil, led); err != nil {
 		return SyncResult{Recovered: true}, err
 	}
 	return SyncResult{Deployed: true, Recovered: true}, nil
@@ -141,7 +142,7 @@ type DeployResult struct {
 // Deploy reconciles the running stack of an environment to its current committed pin
 // file (the path CI runs on a Renovate/explicit bump or a promotion commit) and records
 // the outcome.
-func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, store PinStore, led ledger.Ledger) (DeployResult, error) {
+func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, vf verify.Verifier, store PinStore, led ledger.Ledger) (DeployResult, error) {
 	env, ok := cfg.Environment(envName)
 	if !ok {
 		return DeployResult{}, fmt.Errorf("environment %q not found", envName)
@@ -157,41 +158,56 @@ func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor
 	if err != nil {
 		return DeployResult{}, err
 	}
-	if err := deployAndRecord(ctx, envName, env.PinFile, pins, sha, "deploy", ex, led); err != nil {
+	if err := deployAndRecord(ctx, envName, env.PinFile, pins, sha, "deploy", ex, nil, led); err != nil {
 		return DeployResult{}, err
 	}
 	return DeployResult{Pins: pins, Deployed: true}, nil
 }
 
-// deployAndRecord deploys pins for env and records the outcome keyed by sha. A nil
-// executor is a setup error (no record is written); a deploy failure is recorded as
-// "failed" and returned, so the next Sync can self-heal.
-func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha, by string, ex executor.Executor, led ledger.Ledger) error {
+// deployAndRecord deploys pins for env and records the outcome keyed by sha. A nil executor
+// is a setup error. After a successful deploy it runs vf (when non-nil): a passing verify
+// records healthy "true"; a failing one records result "failed", healthy "false", and is
+// returned. With vf nil, healthy stays "unknown" (A2 behavior). A failed record is joined
+// in so the self-heal signal the next Sync reads is never lost.
+func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha, by string, ex executor.Executor, vf verify.Verifier, led ledger.Ledger) error {
 	if ex == nil {
 		return fmt.Errorf("no executor configured for environment %q", env)
 	}
 	_, deployErr := ex.Deploy(ctx, executor.Plan{Env: env, PinFile: pinFile, Pins: pins})
-	result := "ok"
-	if deployErr != nil {
+
+	result, healthy := "ok", "unknown"
+	var verifyErr error
+	switch {
+	case deployErr != nil:
 		result = "failed"
+	case vf != nil:
+		if verifyErr = vf.Verify(ctx); verifyErr != nil {
+			result, healthy = "failed", "false"
+		} else {
+			healthy = "true"
+		}
 	}
+
 	recErr := led.Record(ledger.Entry{
 		Environment: env,
 		PinCommit:   sha,
 		Result:      result,
-		Healthy:     "unknown",
+		Healthy:     healthy,
 		ImageSet:    map[string]string(pins),
 		DeployedAt:  time.Now(),
 		By:          by,
 	})
-	if deployErr != nil {
-		// Surface a failed outcome-record too: losing it would also lose the self-heal
-		// signal the next Sync reads, so the failure must not be silent.
+
+	actErr, verb := deployErr, "deploy"
+	if actErr == nil && verifyErr != nil {
+		actErr, verb = verifyErr, "verify"
+	}
+	if actErr != nil {
 		if recErr != nil {
-			return errors.Join(fmt.Errorf("deploy %q: %w", env, deployErr),
+			return errors.Join(fmt.Errorf("%s %q: %w", verb, env, actErr),
 				fmt.Errorf("record outcome: %w", recErr))
 		}
-		return fmt.Errorf("deploy %q: %w", env, deployErr)
+		return fmt.Errorf("%s %q: %w", verb, env, actErr)
 	}
 	return recErr
 }
@@ -233,7 +249,7 @@ type PromoteResult struct {
 // gated — Promote refuses one whose (fromEnv, sha) ledger entry is missing or not ok.
 // The snapshot is frozen: it never reads "the current upstream pin,"
 // only the file as committed at sha.
-func Promote(ctx context.Context, cfg *config.Config, fromEnv, toEnv, sha string, ex executor.Executor, store PinStore, led ledger.Ledger, opts PromoteOptions) (PromoteResult, error) {
+func Promote(ctx context.Context, cfg *config.Config, fromEnv, toEnv, sha string, ex executor.Executor, vf verify.Verifier, store PinStore, led ledger.Ledger, opts PromoteOptions) (PromoteResult, error) {
 	from, ok := cfg.Environment(fromEnv)
 	if !ok {
 		return PromoteResult{}, fmt.Errorf("environment %q not found", fromEnv)
@@ -283,7 +299,7 @@ func Promote(ctx context.Context, cfg *config.Config, fromEnv, toEnv, sha string
 	if err != nil {
 		return PromoteResult{}, err
 	}
-	if err := deployAndRecord(ctx, toEnv, to.PinFile, pins, newSHA, "promote", ex, led); err != nil {
+	if err := deployAndRecord(ctx, toEnv, to.PinFile, pins, newSHA, "promote", ex, nil, led); err != nil {
 		return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA}, err
 	}
 	return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA, Deployed: true}, nil
@@ -306,7 +322,7 @@ type RollbackResult struct {
 // entry (rather than the literal parent commit) means rollback never redeploys a set the
 // ledger knows failed, and repeated rollbacks walk backward through good states instead of
 // oscillating onto the bad one. Immutable image tags keep the previous images addressable.
-func Rollback(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, store PinStore, led ledger.Ledger, opts RollbackOptions) (RollbackResult, error) {
+func Rollback(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, vf verify.Verifier, store PinStore, led ledger.Ledger, opts RollbackOptions) (RollbackResult, error) {
 	env, ok := cfg.Environment(envName)
 	if !ok {
 		return RollbackResult{}, fmt.Errorf("environment %q not found", envName)
@@ -348,7 +364,7 @@ func Rollback(ctx context.Context, cfg *config.Config, envName string, ex execut
 	if err != nil {
 		return RollbackResult{ToSHA: target, Pins: pins}, err
 	}
-	if err := deployAndRecord(ctx, envName, env.PinFile, pins, newSHA, "rollback", ex, led); err != nil {
+	if err := deployAndRecord(ctx, envName, env.PinFile, pins, newSHA, "rollback", ex, nil, led); err != nil {
 		return RollbackResult{ToSHA: target, Pins: pins, Committed: newSHA}, err
 	}
 	return RollbackResult{ToSHA: target, Pins: pins, Committed: newSHA, Deployed: true}, nil
