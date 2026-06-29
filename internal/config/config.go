@@ -127,6 +127,9 @@ func Load(path string) (*Config, error) {
 	if c.Git.AuthorEmail == "" {
 		c.Git.AuthorEmail = "gantry@local"
 	}
+	if c.Forge.Kind == "github" && c.Forge.BaseURL == "" {
+		c.Forge.BaseURL = "https://api.github.com"
+	}
 
 	for i := range c.Components {
 		s := &c.Components[i].Source
@@ -142,8 +145,10 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) validate() error {
-	if c.Forge.Kind != "gitlab" {
-		return fmt.Errorf("unsupported forge.kind %q (slice 1: gitlab)", c.Forge.Kind)
+	switch c.Forge.Kind {
+	case "gitlab", "github":
+	default:
+		return fmt.Errorf("unsupported forge.kind %q (supported: gitlab, github)", c.Forge.Kind)
 	}
 	if err := c.validateComponents(); err != nil {
 		return err
