@@ -59,34 +59,9 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 		}
 	}
 
-	conn := cfg.Connections[env.Executor.Connection]
-	var ex executor.Executor
-	var vf verify.Verifier
-	if needExec && conn.SSH != nil {
-		logins, err := resolveLogins(res, cfg.Registries)
-		if err != nil {
-			return nil, err
-		}
-		key, err := res.Resolve(conn.SSH.Key)
-		if err != nil {
-			return nil, err
-		}
-		known, err := res.Resolve(conn.SSH.KnownHosts)
-		if err != nil {
-			return nil, err
-		}
-		runner, err := composessh.NewSSHRunner(conn.Address, conn.SSH.User, key, known)
-		if err != nil {
-			return nil, err
-		}
-		ex = &composessh.Executor{
-			Runner:       runner,
-			ProjectDir:   env.Executor.ProjectDir,
-			ComposeFiles: env.Executor.ComposeFiles,
-			EnvFile:      env.Executor.EnvFile,
-			Logins:       logins,
-		}
-		vf = buildVerifiers(env.Verify, runner, env.Executor)
+	ex, vf, err := buildExecAndVerify(res, cfg, env, needExec)
+	if err != nil {
+		return nil, err
 	}
 
 	// Pin files are tracked in the git repo alongside gantry.yaml.
@@ -101,6 +76,37 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 		return nil, err
 	}
 	return &deps{cfg: cfg, forge: f, exec: ex, verify: vf, store: store, ledger: led, env: envName}, nil
+}
+
+// buildExecAndVerify builds the SSH executor and verifiers for env when needExec is set and
+// the connection has an ssh block; otherwise it returns nils (read-only or forge-free
+// commands skip the SSH secrets they do not use).
+func buildExecAndVerify(res config.SecretResolver, cfg *config.Config, env *config.Environment, needExec bool) (executor.Executor, verify.Verifier, error) {
+	conn := cfg.Connections[env.Executor.Connection]
+	if !needExec || conn.SSH == nil {
+		return nil, nil, nil
+	}
+	logins, err := resolveLogins(res, cfg.Registries)
+	if err != nil {
+		return nil, nil, err
+	}
+	key, err := res.Resolve(conn.SSH.Key)
+	if err != nil {
+		return nil, nil, err
+	}
+	known, err := res.Resolve(conn.SSH.KnownHosts)
+	if err != nil {
+		return nil, nil, err
+	}
+	runner, err := composessh.NewSSHRunner(conn.Address, conn.SSH.User, key, known)
+	if err != nil {
+		return nil, nil, err
+	}
+	ex, err := newExecutor(*env, runner, logins)
+	if err != nil {
+		return nil, nil, err
+	}
+	return ex, buildVerifiers(env.Verify, runner, env.Executor), nil
 }
 
 // resolveLogins resolves each registry's credentials for the executor to log in with.
