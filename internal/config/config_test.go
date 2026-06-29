@@ -299,3 +299,57 @@ environments:
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "symlink-release")
 }
+
+const blueGreenCfg = `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+connections:
+  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
+components:
+  - { id: svc, project: grp/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: front
+    source: { track: latest }
+    pin_file: .env.versions.front
+    executor:
+      kind: blue-green
+      connection: h
+      slots:
+        blue:  { project_dir: /opt/front-blue,  compose_files: [compose.yaml] }
+        green: { project_dir: /opt/front-green, compose_files: [compose.yaml] }
+      pointer:
+        link: /etc/nginx/conf.d/front.conf
+        blue: /etc/nginx/conf.d/upstream-blue.conf
+        green: /etc/nginx/conf.d/upstream-green.conf
+        reload: "nginx -s reload"
+`
+
+func TestLoad_BlueGreen(t *testing.T) {
+	c, err := Load(writeCfg(t, blueGreenCfg))
+	require.NoError(t, err)
+	env, _ := c.Environment("front")
+	require.Equal(t, "/opt/front-blue", env.Executor.Slots["blue"].ProjectDir)
+	require.Equal(t, "nginx -s reload", env.Executor.Pointer.Reload)
+}
+
+func TestLoad_BlueGreenInvalid(t *testing.T) {
+	// missing the green slot
+	bad := `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+connections:
+  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
+components:
+  - { id: svc, project: grp/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: front
+    source: { track: latest }
+    pin_file: .env.versions.front
+    executor:
+      kind: blue-green
+      connection: h
+      slots: { blue: { project_dir: /opt/front-blue } }
+      pointer: { link: /l, blue: /b, green: /g, reload: "r" }
+`
+	_, err := Load(writeCfg(t, bad))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "green")
+}
