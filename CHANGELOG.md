@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.0](https://github.com/RomanAgaltsev/gantry/compare/v0.6.0...v0.7.0) (2026-06-29)
+
+
+### Features
+
+* **cli:** select executor by kind via a newExecutor factory ([d736941](https://github.com/RomanAgaltsev/gantry/commit/d73694137dd5201dcc673b5aba50c68736cc0648))
+* **executor:** add symlink-release executor (versioned dir + atomic ([b7515a5](https://github.com/RomanAgaltsev/gantry/commit/b7515a5d102ac8719072edd6138ead156ad1ce46))
+* **executor:** carry the pin commit SHA on Plan ([3dc7eb1](https://github.com/RomanAgaltsev/gantry/commit/3dc7eb11e76055294bc4b4bfa68e170240845581))
+* symlink release executor ([dc97abf](https://github.com/RomanAgaltsev/gantry/commit/dc97abf22804f67f52d879bb6fd6ca4e560b0b9d))
+
 ## [0.6.0](https://github.com/RomanAgaltsev/gantry/compare/v0.5.0...v0.6.0) (2026-06-29)
 
 
