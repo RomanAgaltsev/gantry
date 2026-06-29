@@ -12,6 +12,7 @@ type Plan struct {
 	Env     string
 	PinFile string
 	Pins    pin.Set
+	Commit  string // pin-file commit SHA this plan deploys (used to name release dirs)
 }
 
 // Result reports the outcome of a deploy.

@@ -79,9 +79,24 @@ func TestDeploy_QuotesInterpolatedValues(t *testing.T) {
 }
 
 func TestShellQuote(t *testing.T) {
-	require.Equal(t, `'plain'`, shellQuote("plain"))
-	require.Equal(t, `'a b'`, shellQuote("a b"))
-	require.Equal(t, `'a'\''b'`, shellQuote("a'b")) // embedded single quote escaped
+	require.Equal(t, `'plain'`, ShellQuote("plain"))
+	require.Equal(t, `'a b'`, ShellQuote("a b"))
+	require.Equal(t, `'a'\''b'`, ShellQuote("a'b"))
+}
+
+func TestRunCompose(t *testing.T) {
+	fr := &fakeRunner{}
+	err := RunCompose(context.Background(), fr, ComposeOpts{
+		ProjectDir:   "/opt/app",
+		ComposeFiles: []string{"compose.yaml"},
+		EnvFile:      "current/.env",
+	}, pin.Set{"A_IMAGE": "reg/a:v1"})
+	require.NoError(t, err)
+	require.Len(t, fr.cmds, 2) // no logins configured: pull, up
+	require.Contains(t, fr.cmds[0], "cd '/opt/app'")
+	require.Contains(t, fr.cmds[0], "--env-file 'current/.env'")
+	require.Contains(t, fr.cmds[0], "pull")
+	require.Contains(t, fr.cmds[1], "up -d")
 }
 
 func TestRegistryHostOf(t *testing.T) {

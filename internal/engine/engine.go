@@ -173,7 +173,7 @@ func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha
 	if ex == nil {
 		return fmt.Errorf("no executor configured for environment %q", env)
 	}
-	_, deployErr := ex.Deploy(ctx, executor.Plan{Env: env, PinFile: pinFile, Pins: pins})
+	_, deployErr := ex.Deploy(ctx, executor.Plan{Env: env, PinFile: pinFile, Pins: pins, Commit: sha})
 
 	result, healthy := "ok", "unknown"
 	var verifyErr error
