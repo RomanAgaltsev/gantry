@@ -121,10 +121,11 @@ func (l *fakeLedger) LatestHealthy(env string) (ledger.Entry, error) {
 type fakeExec struct {
 	called bool
 	pins   pin.Set
+	commit string
 }
 
 func (e *fakeExec) Deploy(_ context.Context, p executor.Plan) (executor.Result, error) {
-	e.called, e.pins = true, p.Pins
+	e.called, e.pins, e.commit = true, p.Pins, p.Commit
 	return executor.Result{Changed: true}, nil
 }
 
@@ -363,4 +364,15 @@ func TestDeployAndRecord_VerifyMatrix(t *testing.T) {
 		require.Equal(t, "failed", led.entries[0].Result)
 		require.Equal(t, "unknown", led.entries[0].Healthy)
 	})
+}
+
+func TestDeploy_SetsPlanCommit(t *testing.T) {
+	cfg := &config.Config{Environments: []config.Environment{
+		{Name: "test", Source: config.Source{Track: "latest"}, PinFile: ".env.versions.test"},
+	}}
+	store := &fakeStore{cur: pin.Set{"K": "img:v1"}, headSHA: "deadbeef"}
+	fe := &fakeExec{}
+	_, err := Deploy(context.Background(), cfg, "test", fe, nil, store, &fakeLedger{})
+	require.NoError(t, err)
+	require.Equal(t, "deadbeef", fe.commit) // Plan.Commit == the pin commit SHA
 }
