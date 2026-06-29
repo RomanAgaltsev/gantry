@@ -41,9 +41,14 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 	if err != nil {
 		return nil, err
 	}
-	env, ok := cfg.Environment(envName)
-	if !ok {
-		return nil, fmt.Errorf("environment %q not found", envName)
+
+	var env config.Environment
+	if envName != "" {
+		e, ok := cfg.Environment(envName)
+		if !ok {
+			return nil, fmt.Errorf("environment %q not found", envName)
+		}
+		env = *e
 	}
 	res := config.DefaultResolver()
 
@@ -59,7 +64,7 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 		}
 	}
 
-	ex, vf, err := buildExecAndVerify(res, cfg, env, needExec)
+	ex, vf, err := buildExecAndVerify(res, cfg, &env, needExec)
 	if err != nil {
 		return nil, err
 	}
