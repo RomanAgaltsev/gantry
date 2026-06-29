@@ -16,7 +16,7 @@ func newDeployCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := engine.Deploy(cmd.Context(), d.cfg, d.env, d.exec, d.store, d.ledger)
+			res, err := engine.Deploy(cmd.Context(), d.cfg, d.env, d.exec, d.verify, d.store, d.ledger)
 			if err != nil {
 				return err
 			}
