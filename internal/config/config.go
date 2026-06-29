@@ -93,11 +93,28 @@ type Source struct {
 
 // ExecutorConfig configures the deploy backend for an environment.
 type ExecutorConfig struct {
-	Kind         string   `yaml:"kind"`
-	Connection   string   `yaml:"connection"`
+	Kind         string                `yaml:"kind"`
+	Connection   string                `yaml:"connection"`
+	ProjectDir   string                `yaml:"project_dir"`
+	ComposeFiles []string              `yaml:"compose_files"`
+	EnvFile      string                `yaml:"env_file"`
+	Slots        map[string]SlotConfig `yaml:"slots"`   // blue-green only
+	Pointer      PointerConfig         `yaml:"pointer"` // blue-green only
+}
+
+// SlotConfig is one blue-green slot's compose project.
+type SlotConfig struct {
 	ProjectDir   string   `yaml:"project_dir"`
 	ComposeFiles []string `yaml:"compose_files"`
-	EnvFile      string   `yaml:"env_file"`
+}
+
+// PointerConfig declares the switchable pointer: a symlink (Link) flipped between the
+// per-slot targets (Blue/Green), followed by Reload.
+type PointerConfig struct {
+	Link   string `yaml:"link"`
+	Blue   string `yaml:"blue"`
+	Green  string `yaml:"green"`
+	Reload string `yaml:"reload"`
 }
 
 // Registry holds credentials for one container registry host.
@@ -222,8 +239,12 @@ func (c *Config) validateEnvironments() error {
 		}
 		switch env.Executor.Kind {
 		case "compose-over-ssh", "symlink-release":
+		case "blue-green":
+			if err := validateBlueGreen(env); err != nil {
+				return err
+			}
 		default:
-			return fmt.Errorf("environment %q: unsupported executor.kind %q (want compose-over-ssh|symlink-release)", env.Name, env.Executor.Kind)
+			return fmt.Errorf("environment %q: unsupported executor.kind %q (want compose-over-ssh|symlink-release|blue-green)", env.Name, env.Executor.Kind)
 		}
 		conn, ok := c.Connections[env.Executor.Connection]
 		if !ok {
@@ -255,6 +276,23 @@ func validateVerifyProbes(env Environment) error {
 		default:
 			return fmt.Errorf("environment %q: unsupported verify kind %q (want http|compose-ps|command)", env.Name, p.Kind)
 		}
+	}
+	return nil
+}
+
+func validateBlueGreen(env Environment) error {
+	if len(env.Executor.Slots) != 2 {
+		return fmt.Errorf("environment %q: blue-green requires exactly slots blue and green", env.Name)
+	}
+	for _, name := range []string{"blue", "green"} {
+		s, ok := env.Executor.Slots[name]
+		if !ok || s.ProjectDir == "" {
+			return fmt.Errorf("environment %q: blue-green slot %q requires project_dir", env.Name, name)
+		}
+	}
+	p := env.Executor.Pointer
+	if p.Link == "" || p.Blue == "" || p.Green == "" || p.Reload == "" {
+		return fmt.Errorf("environment %q: blue-green pointer requires link, blue, green, reload", env.Name)
 	}
 	return nil
 }

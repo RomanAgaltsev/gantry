@@ -25,3 +25,12 @@ type Result struct {
 type Executor interface {
 	Deploy(ctx context.Context, p Plan) (Result, error)
 }
+
+// SlotExecutor is an executor whose environment has two slots behind a switchable pointer.
+// The engine dispatches slot behavior (switch, slot-rollback) to it by type-assertion.
+type SlotExecutor interface {
+	Executor                                         // Deploy reconciles the IDLE slot
+	Slots() (a, b string)                            // the two slot names
+	LiveSlot(ctx context.Context) (string, error)    // slot the pointer routes to; "" if unset
+	SwitchTo(ctx context.Context, slot string) error // flip the pointer to slot and reload
+}
