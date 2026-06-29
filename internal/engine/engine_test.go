@@ -376,3 +376,64 @@ func TestDeploy_SetsPlanCommit(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "deadbeef", fe.commit) // Plan.Commit == the pin commit SHA
 }
+
+type fakeSlotExec struct {
+	live       string
+	switchedTo string
+}
+
+func (e *fakeSlotExec) Deploy(context.Context, executor.Plan) (executor.Result, error) {
+	return executor.Result{Changed: true}, nil
+}
+func (e *fakeSlotExec) Slots() (string, string)                  { return "blue", "green" }
+func (e *fakeSlotExec) LiveSlot(context.Context) (string, error) { return e.live, nil }
+func (e *fakeSlotExec) SwitchTo(_ context.Context, slot string) error {
+	e.switchedTo = slot
+	return nil
+}
+
+func bgCfg() *config.Config {
+	return &config.Config{Environments: []config.Environment{
+		{Name: "front", Source: config.Source{Track: "latest"}, PinFile: ".env.versions.front"},
+	}}
+}
+
+func TestSwitch_GateAndFlip(t *testing.T) {
+	cfg := bgCfg()
+	store := &fakeStore{headSHA: "h1"}
+	led := &fakeLedger{entries: []ledger.Entry{{Environment: "front", PinCommit: "h1", Result: "ok"}}}
+	se := &fakeSlotExec{live: "blue"} // live blue -> idle green
+	res, err := Switch(context.Background(), cfg, "front", se, store, led)
+	require.NoError(t, err)
+	require.Equal(t, "green", se.switchedTo)
+	require.Equal(t, "blue", res.From)
+	require.Equal(t, "green", res.To)
+	require.Equal(t, "switch", led.entries[len(led.entries)-1].By)
+}
+
+func TestSwitch_GateRefusesUnstaged(t *testing.T) {
+	cfg := bgCfg()
+	store := &fakeStore{headSHA: "h1"}
+	led := &fakeLedger{} // no ok entry for h1
+	_, err := Switch(context.Background(), cfg, "front", &fakeSlotExec{live: "blue"}, store, led)
+	require.Error(t, err)
+}
+
+func TestSwitch_NonSlotExecutor(t *testing.T) {
+	_, err := Switch(context.Background(), bgCfg(), "front", &fakeExec{}, &fakeStore{headSHA: "h1"}, &fakeLedger{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "blue-green")
+}
+
+func TestRollback_BlueGreenFlipsBack(t *testing.T) {
+	cfg := bgCfg()
+	store := &fakeStore{headSHA: "h2"}
+	led := &fakeLedger{}
+	se := &fakeSlotExec{live: "green"} // green live -> roll back to blue
+	res, err := Rollback(context.Background(), cfg, "front", se, nil, store, led, RollbackOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "blue", se.switchedTo)
+	require.Equal(t, "blue", res.Slot)
+	require.True(t, res.Deployed)
+	require.Equal(t, "rollback", led.entries[len(led.entries)-1].By)
+}

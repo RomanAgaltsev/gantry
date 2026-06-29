@@ -25,7 +25,15 @@ func newRollbackCmd() *cobra.Command {
 				return err
 			}
 			if res.DryRun {
+				if res.Slot != "" {
+					cmd.Printf("would roll back %s by switching to %s\n", envName, res.Slot)
+					return nil
+				}
 				cmd.Printf("would roll back %s to %.7s (%d pins)\n", envName, res.ToSHA, len(res.Pins))
+				return nil
+			}
+			if res.Slot != "" {
+				cmd.Printf("rolled back %s by switching to %s\n", envName, res.Slot)
 				return nil
 			}
 			cmd.Printf("rolled back %s to %.7s; deployed %d pins\n", envName, res.ToSHA, len(res.Pins))

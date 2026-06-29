@@ -332,6 +332,7 @@ type RollbackResult struct {
 	Committed string  // the new commit recording the rollback (or the existing one if unchanged)
 	Deployed  bool
 	DryRun    bool
+	Slot      string // blue-green: the slot now live after the flip-back ("" for file-model)
 }
 
 // Rollback restores env to the most recent GREEN deploy older than its current pin commit,
@@ -343,6 +344,9 @@ func Rollback(ctx context.Context, cfg *config.Config, envName string, ex execut
 	env, ok := cfg.Environment(envName)
 	if !ok {
 		return RollbackResult{}, fmt.Errorf("environment %q not found", envName)
+	}
+	if se, ok := ex.(executor.SlotExecutor); ok {
+		return slotRollback(ctx, envName, env.PinFile, se, store, led, opts)
 	}
 	last, err := store.LatestCommit(env.PinFile)
 	if errors.Is(err, ErrNoHistory) {
@@ -385,4 +389,107 @@ func Rollback(ctx context.Context, cfg *config.Config, envName string, ex execut
 		return RollbackResult{ToSHA: target, Pins: pins, Committed: newSHA}, err
 	}
 	return RollbackResult{ToSHA: target, Pins: pins, Committed: newSHA, Deployed: true}, nil
+}
+
+// slotRollback rolls a blue-green environment back by flipping the pointer to the other
+// (previously-live) slot, which still runs the prior version.
+func slotRollback(ctx context.Context, envName, pinFile string, se executor.SlotExecutor, store PinStore, led ledger.Ledger, opts RollbackOptions) (RollbackResult, error) {
+	live, err := se.LiveSlot(ctx)
+	if err != nil {
+		return RollbackResult{}, err
+	}
+	if live == "" {
+		return RollbackResult{}, fmt.Errorf("environment %q has no live slot to roll back from", envName)
+	}
+	a, b := se.Slots()
+	target := otherSlot(a, b, live)
+	if opts.DryRun {
+		return RollbackResult{Slot: target, DryRun: true}, nil
+	}
+	if err := se.SwitchTo(ctx, target); err != nil {
+		return RollbackResult{Slot: target}, err
+	}
+	head, err := store.LatestCommit(pinFile)
+	if err != nil && !errors.Is(err, ErrNoHistory) {
+		return RollbackResult{Slot: target, Deployed: true}, err
+	}
+	rec := ledger.Entry{
+		Environment: envName,
+		PinCommit:   head,
+		Result:      "ok",
+		DeployedAt:  time.Now(),
+		By:          "rollback",
+	}
+	if err := led.Record(rec); err != nil {
+		return RollbackResult{Slot: target, Deployed: true}, err
+	}
+	return RollbackResult{Slot: target, Deployed: true}, nil
+}
+
+// SwitchResult reports a blue-green pointer switch.
+type SwitchResult struct {
+	From      string // live slot before the switch ("" at bootstrap)
+	To        string // live slot after the switch
+	Committed string // pin commit the switch promoted (the head)
+}
+
+// otherSlot returns the slot that is not live; an unset/unknown live slot resolves to a.
+func otherSlot(a, b, live string) string {
+	if live == a {
+		return b
+	}
+	if live == b {
+		return a
+	}
+	return a
+}
+
+// Switch promotes the idle slot of a blue-green environment by flipping its pointer, gated
+// on the environment's current head pin commit having an ok ledger entry. It requires an
+// executor implementing executor.SlotExecutor.
+func Switch(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, store PinStore, led ledger.Ledger) (SwitchResult, error) {
+	env, ok := cfg.Environment(envName)
+	if !ok {
+		return SwitchResult{}, fmt.Errorf("environment %q not found", envName)
+	}
+	se, ok := ex.(executor.SlotExecutor)
+	if !ok {
+		return SwitchResult{}, fmt.Errorf("environment %q is not a blue-green environment", envName)
+	}
+	head, err := store.LatestCommit(env.PinFile)
+	if errors.Is(err, ErrNoHistory) {
+		return SwitchResult{}, fmt.Errorf("environment %q has nothing staged to switch", envName)
+	}
+	if err != nil {
+		return SwitchResult{}, err
+	}
+	entry, ok, err := led.Lookup(envName, head)
+	if err != nil {
+		return SwitchResult{}, err
+	}
+	if !ok || entry.Result != "ok" {
+		return SwitchResult{}, fmt.Errorf("refusing to switch %q: idle slot deploy at %.7s is not ok (gate)", envName, head)
+	}
+	live, err := se.LiveSlot(ctx)
+	if err != nil {
+		return SwitchResult{}, err
+	}
+	a, b := se.Slots()
+	idle := otherSlot(a, b, live)
+	if err := se.SwitchTo(ctx, idle); err != nil {
+		return SwitchResult{From: live, To: idle, Committed: head}, err
+	}
+	rec := ledger.Entry{
+		Environment: envName,
+		PinCommit:   head,
+		Result:      "ok",
+		Healthy:     entry.Healthy,
+		ImageSet:    entry.ImageSet,
+		DeployedAt:  time.Now(),
+		By:          "switch",
+	}
+	if err := led.Record(rec); err != nil {
+		return SwitchResult{From: live, To: idle, Committed: head}, err
+	}
+	return SwitchResult{From: live, To: idle, Committed: head}, nil
 }
