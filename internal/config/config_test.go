@@ -152,3 +152,63 @@ environments:
 	_, err := Load(writeCfg(t, bad))
 	require.ErrorContains(t, err, "project")
 }
+
+func TestLoad_GitHubDefaultsBaseURL(t *testing.T) {
+	const cfg = `
+forge:
+  kind: github
+  token: ${env:GH}
+connections:
+  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
+components:
+  - { id: svc, project: octo/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    executor: { kind: compose-over-ssh, connection: h, project_dir: /o }
+`
+	c, err := Load(writeCfg(t, cfg))
+	require.NoError(t, err)
+	require.Equal(t, "https://api.github.com", c.Forge.BaseURL)
+}
+
+func TestLoad_GitHubEnterpriseBaseURLPreserved(t *testing.T) {
+	const cfg = `
+forge:
+  kind: github
+  base_url: https://ghe.example.com/api/v3
+  token: ${env:GH}
+connections:
+  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
+components:
+  - { id: svc, project: octo/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    executor: { kind: compose-over-ssh, connection: h, project_dir: /o }
+`
+	c, err := Load(writeCfg(t, cfg))
+	require.NoError(t, err)
+	require.Equal(t, "https://ghe.example.com/api/v3", c.Forge.BaseURL)
+}
+
+func TestLoad_UnknownForgeKind(t *testing.T) {
+	const cfg = `
+forge: { kind: bitbucket, base_url: https://x, token: "${env:T}" }
+connections:
+  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
+components:
+  - { id: svc, project: octo/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    executor: { kind: compose-over-ssh, connection: h, project_dir: /o }
+`
+	_, err := Load(writeCfg(t, cfg))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "gitlab")
+	require.Contains(t, err.Error(), "github")
+}
