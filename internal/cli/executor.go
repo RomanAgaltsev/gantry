@@ -5,6 +5,7 @@ import (
 
 	"github.com/RomanAgaltsev/gantry/internal/config"
 	"github.com/RomanAgaltsev/gantry/internal/executor"
+	"github.com/RomanAgaltsev/gantry/internal/executor/bluegreen"
 	"github.com/RomanAgaltsev/gantry/internal/executor/composessh"
 	"github.com/RomanAgaltsev/gantry/internal/executor/symlinkrelease"
 )
@@ -29,6 +30,23 @@ func newExecutor(env config.Environment, runner composessh.Runner, logins []comp
 			ComposeFiles: env.Executor.ComposeFiles,
 			Logins:       logins,
 		}, nil
+	case "blue-green":
+		ec := env.Executor
+		return &bluegreen.Executor{
+			Runner: runner,
+			SlotMap: map[string]bluegreen.Slot{
+				"blue":  {ProjectDir: ec.Slots["blue"].ProjectDir, ComposeFiles: ec.Slots["blue"].ComposeFiles},
+				"green": {ProjectDir: ec.Slots["green"].ProjectDir, ComposeFiles: ec.Slots["green"].ComposeFiles},
+			},
+			Order: [2]string{"blue", "green"},
+			Pointer: bluegreen.Pointer{
+				Link:   ec.Pointer.Link,
+				Target: map[string]string{"blue": ec.Pointer.Blue, "green": ec.Pointer.Green},
+				Reload: ec.Pointer.Reload,
+			},
+			Logins: logins,
+		}, nil
+
 	default:
 		return nil, fmt.Errorf("unsupported executor.kind %q", env.Executor.Kind)
 	}
