@@ -264,3 +264,38 @@ environments:
 		require.Error(t, err, probe)
 	}
 }
+
+func TestLoad_SymlinkReleaseExecutor(t *testing.T) {
+	const cfg = `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+connections:
+  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
+components:
+  - { id: svc, project: grp/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: prod
+    source: { promote_from: prod }
+    pin_file: .env.versions.prod
+    executor: { kind: symlink-release, connection: h, project_dir: /opt/app, compose_files: [compose.yaml] }
+`
+	_, err := Load(writeCfg(t, cfg))
+	require.NoError(t, err)
+}
+
+func TestLoad_UnknownExecutorKind(t *testing.T) {
+	const cfg = `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+connections:
+  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
+components:
+  - { id: svc, project: grp/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    executor: { kind: nomad, connection: h, project_dir: /o }
+`
+	_, err := Load(writeCfg(t, cfg))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "symlink-release")
+}

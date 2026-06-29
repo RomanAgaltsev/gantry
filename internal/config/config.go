@@ -220,16 +220,17 @@ func (c *Config) validateEnvironments() error {
 				return fmt.Errorf("environment %q: promote_from %q not found", env.Name, env.Source.PromoteFrom)
 			}
 		}
-		if env.Executor.Kind != "compose-over-ssh" {
-			return fmt.Errorf("environment %q: unsupported executor.kind %q (slice 1: compose-over-ssh)", env.Name, env.Executor.Kind)
+		switch env.Executor.Kind {
+		case "compose-over-ssh", "symlink-release":
+		default:
+			return fmt.Errorf("environment %q: unsupported executor.kind %q (want compose-over-ssh|symlink-release)", env.Name, env.Executor.Kind)
 		}
 		conn, ok := c.Connections[env.Executor.Connection]
 		if !ok {
 			return fmt.Errorf("environment %q: connection %q not found", env.Name, env.Executor.Connection)
 		}
-		if env.Executor.Kind == "compose-over-ssh" && conn.SSH == nil {
-			return fmt.Errorf("environment %q: connection %q requires an ssh block for compose-over-ssh",
-				env.Name, env.Executor.Connection)
+		if conn.SSH == nil {
+			return fmt.Errorf("environment %q: connection %q requires an ssh block", env.Name, env.Executor.Connection)
 		}
 		if err := validateVerifyProbes(env); err != nil {
 			return err
