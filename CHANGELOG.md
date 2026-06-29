@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.8.0](https://github.com/RomanAgaltsev/gantry/compare/v0.7.0...v0.8.0) (2026-06-29)
+
+
+### Features
+
+* blue-green executor ([a56aea9](https://github.com/RomanAgaltsev/gantry/commit/a56aea9ae0bf26a21c0f019c6c33f2d53e626d77))
+* **cli:** add --log-format/--log-level and inject logger into context ([c94222c](https://github.com/RomanAgaltsev/gantry/commit/c94222c10599614918e24d16a8996cb939a2ea26))
+* **cli:** add gantry switch and blue-green executor wiring ([5a6ac07](https://github.com/RomanAgaltsev/gantry/commit/5a6ac07f674febb23092821d192e8f14d8adf912))
+* **cli:** add status --all matrix and make buildDeps env-optional ([06ec9de](https://github.com/RomanAgaltsev/gantry/commit/06ec9def8550762875c2f5ef67798b0ba0967e6f))
+* **config:** add blue-green executor (slots + pointer) block and ([df84454](https://github.com/RomanAgaltsev/gantry/commit/df8445484db4e30337fff9dcdcb919a40de9a178))
+* **engine:** add FormatMatrix renderer ([995cfd2](https://github.com/RomanAgaltsev/gantry/commit/995cfd24fbd20b52a4048239b17184f34c92d51b))
+* **engine:** add StatusMatrix read model ([03495e4](https://github.com/RomanAgaltsev/gantry/commit/03495e4f978af298bf0e151eb3b451db9727e4a7))
+* **engine:** add Switch (gate the idle slot, flip the blue-green ([dc6bdf9](https://github.com/RomanAgaltsev/gantry/commit/dc6bdf951d877c79cf8c3aa2822d4cdaaf40e73e))
+* **engine:** emit structured logs via context-carried logger ([327e625](https://github.com/RomanAgaltsev/gantry/commit/327e62553b24ccdeb09fce7afd835fbbd0d0f1d8))
+* **engine:** roll back blue-green by flipping the pointer to the prior ([48bb628](https://github.com/RomanAgaltsev/gantry/commit/48bb6281fc46c116b13732f0e94f186ee4375128))
+* **executor:** add blue-green pointer switch (atomic flip + reload) ([e4e88e3](https://github.com/RomanAgaltsev/gantry/commit/e4e88e3c033c83cdd220320f545863b7fc4f50df))
+* **executor:** add SlotExecutor capability and blue-green ([f35835e](https://github.com/RomanAgaltsev/gantry/commit/f35835e3cb5899e56c4e40a95f32c4a1cf1f2f85))
+* **logging:** add slog seam with context carrier and discard fallback ([a10063f](https://github.com/RomanAgaltsev/gantry/commit/a10063fa0623e7e0e2c15e73746b917a72512c16))
+* status matrix ([20b7960](https://github.com/RomanAgaltsev/gantry/commit/20b7960d3a5a320a622ed2cc9bc88e93c37b215f))
+
 ## [0.7.0](https://github.com/RomanAgaltsev/gantry/compare/v0.6.0...v0.7.0) (2026-06-29)
 
 
