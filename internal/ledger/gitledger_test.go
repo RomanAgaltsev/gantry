@@ -76,3 +76,17 @@ func TestGitLedger_LatestGreen_None(t *testing.T) {
 	_, err := l.LatestGreen("test")
 	require.ErrorIs(t, err, ErrNoGreen)
 }
+
+func TestLatestHealthy(t *testing.T) {
+	entries := []Entry{
+		{Environment: "test", PinCommit: "a", Result: "ok", Healthy: "true"},
+		{Environment: "test", PinCommit: "b", Result: "ok", Healthy: "unknown"},
+		{Environment: "test", PinCommit: "c", Result: "failed", Healthy: "false"},
+	}
+	e, ok := latestHealthy(entries, "test")
+	require.True(t, ok)
+	require.Equal(t, "a", e.PinCommit) // newest ok+healthy, skipping unknown and failed
+
+	_, ok = latestHealthy([]Entry{{Environment: "test", Result: "ok", Healthy: "unknown"}}, "test")
+	require.False(t, ok)
+}

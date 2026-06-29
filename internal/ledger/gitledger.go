@@ -128,3 +128,15 @@ func (l *gitLedger) History(env string) ([]Entry, error) {
 	}
 	return history(entries, env), nil
 }
+
+func (l *gitLedger) LatestHealthy(env string) (Entry, error) {
+	entries, err := l.all()
+	if err != nil {
+		return Entry{}, err
+	}
+	e, ok := latestHealthy(entries, env)
+	if !ok {
+		return Entry{}, ErrNoGreen
+	}
+	return e, nil
+}

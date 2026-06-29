@@ -32,6 +32,8 @@ type Ledger interface {
 	LatestGreen(env string) (Entry, error)
 	// History returns every entry for env, newest first.
 	History(env string) ([]Entry, error)
+	// LatestHealthy returns the most recent ok+healthy entry for env, or ErrNoGreen.
+	LatestHealthy(env string) (Entry, error)
 }
 
 // lookup returns the most recent entry matching (env, sha). Append-only, latest-wins.
@@ -49,6 +51,16 @@ func lookup(entries []Entry, env, sha string) (Entry, bool) {
 func latestGreen(entries []Entry, env string) (Entry, bool) {
 	for i := len(entries) - 1; i >= 0; i-- {
 		if entries[i].Environment == env && entries[i].Result == "ok" {
+			return entries[i], true
+		}
+	}
+	return Entry{}, false
+}
+
+// latestHealthy returns the most recent ok entry for env whose verification passed.
+func latestHealthy(entries []Entry, env string) (Entry, bool) {
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entries[i].Environment == env && entries[i].Result == "ok" && entries[i].Healthy == "true" {
 			return entries[i], true
 		}
 	}
