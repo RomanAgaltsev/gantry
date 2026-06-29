@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.0](https://github.com/RomanAgaltsev/gantry/compare/v0.4.0...v0.5.0) (2026-06-29)
+
+
+### Features
+
+* **cli:** select forge adapter by kind via a newForge factory ([3fa3553](https://github.com/RomanAgaltsev/gantry/commit/3fa3553f2b1a6a5026cee0c04af27fa2771acf8a))
+* **config:** accept forge.kind github and default its API base_url ([4109929](https://github.com/RomanAgaltsev/gantry/commit/410992943442e350799ab09fb234381d4ae66b21))
+* **forge:** add GitHub Releases adapter ([01422ff](https://github.com/RomanAgaltsev/gantry/commit/01422ff340dcd77b6002834d927625fa26c1cd53))
+* gh forge adapter ([a290f35](https://github.com/RomanAgaltsev/gantry/commit/a290f3505545b0e6fbe3548ad1d8997887774841))
+
 ## [0.4.0](https://github.com/RomanAgaltsev/gantry/compare/v0.3.1...v0.4.0) (2026-06-28)
 
 
