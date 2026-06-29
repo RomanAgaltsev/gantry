@@ -12,6 +12,7 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/executor"
 	"github.com/RomanAgaltsev/gantry/internal/forge"
 	"github.com/RomanAgaltsev/gantry/internal/ledger"
+	"github.com/RomanAgaltsev/gantry/internal/logging"
 	"github.com/RomanAgaltsev/gantry/internal/pin"
 	"github.com/RomanAgaltsev/gantry/internal/verify"
 )
@@ -55,6 +56,9 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 		return SyncResult{}, fmt.Errorf("environment %q: sync supports track-mode only", envName)
 	}
 
+	log := logging.From(ctx)
+	log.Info("polling forge", "env", envName, "components", len(cfg.Components))
+
 	desired := pin.Set{}
 	for _, comp := range cfg.Components {
 		if comp.IsExplicit() {
@@ -91,6 +95,8 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 	if err != nil {
 		return SyncResult{}, err
 	}
+	log.Info("pin written", "env", envName, "commit", sha, "changes", len(changes))
+
 	if err := deployAndRecord(ctx, envName, env.PinFile, merged, sha, "sync", ex, nil, led); err != nil {
 		return SyncResult{Changes: changes}, err
 	}
@@ -187,6 +193,8 @@ func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha
 			healthy = "true"
 		}
 	}
+
+	logging.From(ctx).Info("deploy recorded", "env", env, "by", by, "result", result, "commit", sha)
 
 	recErr := led.Record(ledger.Entry{
 		Environment: env,
