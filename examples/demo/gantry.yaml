@@ -48,3 +48,17 @@ environments:
     verify:
       - { kind: http, url: https://app.example.com/healthz, expect_status: 200 }
       - { kind: compose-ps }
+  - name: front
+    source: { track: latest }
+    pin_file: .env.versions.front
+    executor:
+      kind: blue-green
+      connection: app-host
+      slots:
+        blue: { project_dir: /opt/front-blue, compose_files: [compose.yaml] }
+        green: { project_dir: /opt/front-green, compose_files: [compose.yaml] }
+      pointer:
+        link: /etc/nginx/conf.d/front-upstream.conf
+        blue: /etc/nginx/conf.d/upstream-blue.conf
+        green: /etc/nginx/conf.d/upstream-green.conf
+        reload: "nginx -s reload"
