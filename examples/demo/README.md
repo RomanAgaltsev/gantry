@@ -86,6 +86,20 @@ gantry deploy --env test --config examples/demo/gantry.yaml
 Unlike `sync`, `deploy` does not consult the forge or write the pin file; it just
 deploys what is already committed.
 
+## Verifying deploys
+
+Both environments carry a `verify:` block, so after a deploy gantry runs health probes
+before recording the outcome as healthy. `test` uses a single `compose-ps` check (every
+compose service on the host is running, and healthy if it declares a healthcheck); `prod`
+adds an HTTP probe against `https://app.example.com/healthz` (run from gantry). A failed
+probe records `result: failed, healthy: false` and exits non-zero — the stack is left as
+deployed, not rolled back.
+
+The top-level `promote.require_healthy: true` then tightens the promotion gate: a `test` set
+is promoted to `prod` only once its `test` deploy is recorded `ok` **and** `healthy: true`
+(which is why `test` is verified too, not just `prod`). A green deploy that has not verified
+healthy is refused. See [../../docs/verification.md](../../docs/verification.md).
+
 ## Detecting drift
 
 The `drift:` block sets how long a published-but-unpinned release may sit before gantry
