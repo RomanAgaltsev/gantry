@@ -40,7 +40,7 @@ environments:
     source: { promote_from: test }
     pin_file: .env.versions.prod
     executor:
-      kind: compose-over-ssh
+      kind: symlink-release
       connection: prod-host
       project_dir: /opt/app
       compose_files: [compose.yaml]
