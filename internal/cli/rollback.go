@@ -17,7 +17,7 @@ func newRollbackCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := engine.Rollback(cmd.Context(), d.cfg, envName, d.exec, d.store, d.ledger, engine.RollbackOptions{DryRun: dryRun})
+			res, err := engine.Rollback(cmd.Context(), d.cfg, envName, d.exec, nil, d.store, d.ledger, engine.RollbackOptions{DryRun: dryRun})
 			if err != nil {
 				if hint := deployFailureHint(envName, res.Committed); hint != "" {
 					cmd.PrintErrln(hint)

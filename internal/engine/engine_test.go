@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -142,7 +143,7 @@ func TestSync_DeployFailureRecordsFailedSoNextSyncHeals(t *testing.T) {
 	store := &fakeStore{cur: pin.Set{"SVC_IMAGE": "reg/svc:v1"}}
 	led := &fakeLedger{}
 
-	_, err := Sync(context.Background(), cfg(), "test", f, &failExec{}, store, led, SyncOptions{})
+	_, err := Sync(context.Background(), cfg(), "test", f, &failExec{}, nil, store, led, SyncOptions{})
 	require.Error(t, err)
 	// Pins were committed before the deploy attempt; the failure is recorded as "failed"
 	// keyed by the pin commit so the next Sync self-heals.
@@ -158,7 +159,7 @@ func TestSync_DeployAndRecordBothFail_SurfacesBoth(t *testing.T) {
 	store := &fakeStore{cur: pin.Set{"SVC_IMAGE": "reg/svc:v1"}}
 	led := &fakeLedger{recordErr: stringError("ledger write failed")}
 
-	_, err := Sync(context.Background(), cfg(), "test", f, &failExec{}, store, led, SyncOptions{})
+	_, err := Sync(context.Background(), cfg(), "test", f, &failExec{}, nil, store, led, SyncOptions{})
 	require.Error(t, err)
 	require.ErrorContains(t, err, "ssh down")     // the deploy failure
 	require.ErrorContains(t, err, "ledger write") // the record failure is not dropped
@@ -168,7 +169,7 @@ func TestSync_NilExecutorErrorsNotPanics(t *testing.T) {
 	f := fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v2"}}
 	store := &fakeStore{cur: pin.Set{"SVC_IMAGE": "reg/svc:v1"}}
 
-	_, err := Sync(context.Background(), cfg(), "test", f, nil, store, &fakeLedger{}, SyncOptions{})
+	_, err := Sync(context.Background(), cfg(), "test", f, nil, nil, store, &fakeLedger{}, SyncOptions{})
 	require.ErrorContains(t, err, "no executor")
 }
 
@@ -178,7 +179,7 @@ func TestDeploy_NilExecutorErrorsNotPanics(t *testing.T) {
 		Name: "test", Source: config.Source{Track: "latest"}, PinFile: ".env.versions.test",
 	}}}
 
-	_, err := Deploy(context.Background(), c, "test", nil, store, &fakeLedger{})
+	_, err := Deploy(context.Background(), c, "test", nil, nil, store, &fakeLedger{})
 	require.ErrorContains(t, err, "no executor")
 }
 
@@ -196,7 +197,7 @@ func TestSync_NoDiffIsNoOp(t *testing.T) {
 	store := &fakeStore{cur: pin.Set{"SVC_IMAGE": "reg/svc:v1"}}
 	ex := &fakeExec{}
 
-	res, err := Sync(context.Background(), cfg(), "test", f, ex, store, &fakeLedger{}, SyncOptions{})
+	res, err := Sync(context.Background(), cfg(), "test", f, ex, nil, store, &fakeLedger{}, SyncOptions{})
 	require.NoError(t, err)
 	require.False(t, ex.called)
 	require.Nil(t, store.committed)
@@ -208,7 +209,7 @@ func TestSync_DryRunDoesNotCommitOrDeploy(t *testing.T) {
 	store := &fakeStore{cur: pin.Set{"SVC_IMAGE": "reg/svc:v1"}}
 	ex := &fakeExec{}
 
-	res, err := Sync(context.Background(), cfg(), "test", f, ex, store, &fakeLedger{}, SyncOptions{DryRun: true})
+	res, err := Sync(context.Background(), cfg(), "test", f, ex, nil, store, &fakeLedger{}, SyncOptions{DryRun: true})
 	require.NoError(t, err)
 	require.False(t, ex.called)
 	require.Nil(t, store.committed)
@@ -232,7 +233,7 @@ func TestSync_SkipsExplicitComponents(t *testing.T) {
 		}},
 	}
 
-	_, err := Sync(context.Background(), c, "test", f, ex, store, &fakeLedger{}, SyncOptions{})
+	_, err := Sync(context.Background(), c, "test", f, ex, nil, store, &fakeLedger{}, SyncOptions{})
 	require.NoError(t, err)
 	// forge component advanced to v2; explicit pg carried forward, never polled.
 	require.Equal(t, "reg/svc:v2", ex.pins["SVC_IMAGE"])
@@ -253,7 +254,7 @@ func TestDeploy_ReconcilesCurrentPinFile(t *testing.T) {
 		Name: "test", Source: config.Source{Track: "latest"}, PinFile: ".env.versions.test",
 	}}}
 
-	res, err := Deploy(context.Background(), c, "test", ex, store, &fakeLedger{})
+	res, err := Deploy(context.Background(), c, "test", ex, nil, store, &fakeLedger{})
 	require.NoError(t, err)
 	require.True(t, ex.called)
 	require.Equal(t, store.cur, ex.pins) // whole pin file, both sources
@@ -267,7 +268,7 @@ func TestDeploy_EmptyPinFileErrors(t *testing.T) {
 		Name: "test", PinFile: ".env.versions.test",
 	}}}
 
-	_, err := Deploy(context.Background(), c, "test", ex, store, &fakeLedger{})
+	_, err := Deploy(context.Background(), c, "test", ex, nil, store, &fakeLedger{})
 	require.Error(t, err)
 	require.False(t, ex.called)
 }
@@ -278,7 +279,7 @@ func TestSync_DiffDeploysCommitsAndRecords(t *testing.T) {
 	ex := &fakeExec{}
 	led := &fakeLedger{}
 
-	res, err := Sync(context.Background(), cfg(), "test", f, ex, store, led, SyncOptions{})
+	res, err := Sync(context.Background(), cfg(), "test", f, ex, nil, store, led, SyncOptions{})
 	require.NoError(t, err)
 	require.True(t, ex.called)
 	require.Equal(t, pin.Set{"SVC_IMAGE": "reg/svc:v2"}, store.committed)
@@ -296,7 +297,7 @@ func TestSync_NoDiff_Green_IsNoOp(t *testing.T) {
 	ex := &fakeExec{}
 	led := &fakeLedger{entries: []ledger.Entry{{Environment: "test", PinCommit: "h1", Result: "ok"}}}
 
-	res, err := Sync(context.Background(), cfg(), "test", f, ex, store, led, SyncOptions{})
+	res, err := Sync(context.Background(), cfg(), "test", f, ex, nil, store, led, SyncOptions{})
 	require.NoError(t, err)
 	require.False(t, ex.called)
 	require.False(t, res.Recovered)
@@ -310,11 +311,56 @@ func TestSync_NoDiff_NotGreen_SelfHeals(t *testing.T) {
 	// h1 has a failed entry only → must redeploy and record a fresh outcome
 	led := &fakeLedger{entries: []ledger.Entry{{Environment: "test", PinCommit: "h1", Result: "failed"}}}
 
-	res, err := Sync(context.Background(), cfg(), "test", f, ex, store, led, SyncOptions{})
+	res, err := Sync(context.Background(), cfg(), "test", f, ex, nil, store, led, SyncOptions{})
 	require.NoError(t, err)
 	require.True(t, ex.called)
 	require.True(t, res.Recovered)
 	require.Equal(t, pin.Set{"SVC_IMAGE": "reg/svc:v1"}, ex.pins)
 	require.Equal(t, "ok", led.entries[len(led.entries)-1].Result)
 	require.Equal(t, "h1", led.entries[len(led.entries)-1].PinCommit)
+}
+
+type fakeVerifier struct{ err error }
+
+func (v fakeVerifier) Verify(context.Context) error { return v.err }
+
+func TestDeployAndRecord_VerifyMatrix(t *testing.T) {
+	base := func() (*fakeStore, *fakeLedger) {
+		return &fakeStore{cur: pin.Set{"K": "img:v1"}, headSHA: "sha1"}, &fakeLedger{}
+	}
+	pins := pin.Set{"K": "img:v1"}
+
+	t.Run("deploy ok, verify pass -> ok/true", func(t *testing.T) {
+		_, led := base()
+		err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, fakeVerifier{nil}, led)
+		require.NoError(t, err)
+		require.Equal(t, "ok", led.entries[0].Result)
+		require.Equal(t, "true", led.entries[0].Healthy)
+	})
+
+	t.Run("deploy ok, verify fail -> failed/false + error", func(t *testing.T) {
+		_, led := base()
+		err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, fakeVerifier{errors.New("503")}, led)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "verify")
+		require.Equal(t, "failed", led.entries[0].Result)
+		require.Equal(t, "false", led.entries[0].Healthy)
+	})
+
+	t.Run("no verifier -> ok/unknown (A2 behavior preserved)", func(t *testing.T) {
+		_, led := base()
+		err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, nil, led)
+		require.NoError(t, err)
+		require.Equal(t, "ok", led.entries[0].Result)
+		require.Equal(t, "unknown", led.entries[0].Healthy)
+	})
+
+	t.Run("deploy fail -> verify not run, failed/unknown", func(t *testing.T) {
+		_, led := base()
+		err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &failExec{}, fakeVerifier{errors.New("unused")}, led)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "deploy")
+		require.Equal(t, "failed", led.entries[0].Result)
+		require.Equal(t, "unknown", led.entries[0].Healthy)
+	})
 }
