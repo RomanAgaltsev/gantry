@@ -1,0 +1,79 @@
+package bluegreen
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/RomanAgaltsev/gantry/internal/executor"
+	"github.com/RomanAgaltsev/gantry/internal/pin"
+)
+
+type fakeRunner struct {
+	cmds        []string
+	stdins      [][]byte
+	readlink    string
+	readlinkErr error
+}
+
+func (f *fakeRunner) Run(_ context.Context, cmd string, stdin []byte) (string, error) {
+	f.cmds = append(f.cmds, cmd)
+	f.stdins = append(f.stdins, stdin)
+	if strings.HasPrefix(cmd, "readlink") {
+		return f.readlink, f.readlinkErr
+	}
+	return "", nil
+}
+
+func bgExec(fr *fakeRunner) *Executor {
+	return &Executor{
+		Runner: fr,
+		SlotMap: map[string]Slot{
+			"blue":  {ProjectDir: "/opt/blue", ComposeFiles: []string{"compose.yaml"}},
+			"green": {ProjectDir: "/opt/green", ComposeFiles: []string{"compose.yaml"}},
+		},
+		Order: [2]string{"blue", "green"},
+		Pointer: Pointer{
+			Link:   "/etc/nginx/front.conf",
+			Target: map[string]string{"blue": "/etc/nginx/blue.conf", "green": "/etc/nginx/green.conf"},
+			Reload: "nginx -s reload",
+		},
+	}
+}
+
+func TestDeploy_StagesIdleSlot(t *testing.T) {
+	fr := &fakeRunner{readlink: "/etc/nginx/green.conf"} // green live -> idle blue
+	res, err := bgExec(fr).Deploy(context.Background(), executor.Plan{Pins: pin.Set{"K": "img:v2"}})
+	require.NoError(t, err)
+	require.Contains(t, res.Detail, "idle=blue")
+	joined := strings.Join(fr.cmds, "\n")
+	require.Contains(t, joined, "readlink")
+	require.Contains(t, joined, "cat > '/opt/blue/.env'")
+	require.Contains(t, joined, "cd '/opt/blue'") // compose runs in the blue slot
+	require.NotContains(t, joined, "/opt/green")
+}
+
+func TestDeploy_BootstrapStagesBlue(t *testing.T) {
+	fr := &fakeRunner{readlinkErr: context.DeadlineExceeded} // link missing -> bootstrap
+	res, err := bgExec(fr).Deploy(context.Background(), executor.Plan{Pins: pin.Set{"K": "img:v1"}})
+	require.NoError(t, err)
+	require.Contains(t, res.Detail, "idle=blue")
+}
+
+func TestLiveSlot(t *testing.T) {
+	fr := &fakeRunner{readlink: "/etc/nginx/blue.conf"}
+	live, err := bgExec(fr).LiveSlot(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "blue", live)
+
+	fr2 := &fakeRunner{readlinkErr: context.DeadlineExceeded}
+	live, err = bgExec(fr2).LiveSlot(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "", live) // unset -> bootstrap
+
+	fr3 := &fakeRunner{readlink: "/etc/nginx/unknown.conf"}
+	_, err = bgExec(fr3).LiveSlot(context.Background())
+	require.Error(t, err) // resolves to neither configured target
+}
