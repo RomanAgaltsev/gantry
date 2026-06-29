@@ -386,3 +386,71 @@ func Rollback(ctx context.Context, cfg *config.Config, envName string, ex execut
 	}
 	return RollbackResult{ToSHA: target, Pins: pins, Committed: newSHA, Deployed: true}, nil
 }
+
+// SwitchResult reports a blue-green pointer switch.
+type SwitchResult struct {
+	From      string // live slot before the switch ("" at bootstrap)
+	To        string // live slot after the switch
+	Committed string // pin commit the switch promoted (the head)
+}
+
+// otherSlot returns the slot that is not live; an unset/unknown live slot resolves to a.
+func otherSlot(a, b, live string) string {
+	if live == a {
+		return b
+	}
+	if live == b {
+		return a
+	}
+	return a
+}
+
+// Switch promotes the idle slot of a blue-green environment by flipping its pointer, gated
+// on the environment's current head pin commit having an ok ledger entry. It requires an
+// executor implementing executor.SlotExecutor.
+func Switch(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, store PinStore, led ledger.Ledger) (SwitchResult, error) {
+	env, ok := cfg.Environment(envName)
+	if !ok {
+		return SwitchResult{}, fmt.Errorf("environment %q not found", envName)
+	}
+	se, ok := ex.(executor.SlotExecutor)
+	if !ok {
+		return SwitchResult{}, fmt.Errorf("environment %q is not a blue-green environment", envName)
+	}
+	head, err := store.LatestCommit(env.PinFile)
+	if errors.Is(err, ErrNoHistory) {
+		return SwitchResult{}, fmt.Errorf("environment %q has nothing staged to switch", envName)
+	}
+	if err != nil {
+		return SwitchResult{}, err
+	}
+	entry, ok, err := led.Lookup(envName, head)
+	if err != nil {
+		return SwitchResult{}, err
+	}
+	if !ok || entry.Result != "ok" {
+		return SwitchResult{}, fmt.Errorf("refusing to switch %q: idle slot deploy at %.7s is not ok (gate)", envName, head)
+	}
+	live, err := se.LiveSlot(ctx)
+	if err != nil {
+		return SwitchResult{}, err
+	}
+	a, b := se.Slots()
+	idle := otherSlot(a, b, live)
+	if err := se.SwitchTo(ctx, idle); err != nil {
+		return SwitchResult{From: live, To: idle, Committed: head}, err
+	}
+	rec := ledger.Entry{
+		Environment: envName,
+		PinCommit:   head,
+		Result:      "ok",
+		Healthy:     entry.Healthy,
+		ImageSet:    entry.ImageSet,
+		DeployedAt:  time.Now(),
+		By:          "switch",
+	}
+	if err := led.Record(rec); err != nil {
+		return SwitchResult{From: live, To: idle, Committed: head}, err
+	}
+	return SwitchResult{From: live, To: idle, Committed: head}, nil
+}
