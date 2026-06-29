@@ -13,6 +13,8 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/pin"
 )
 
+var _ executor.SlotExecutor = (*Executor)(nil)
+
 const slotEnvFile = ".env"
 
 // Slot is one slot's compose project.
@@ -91,4 +93,23 @@ func (e *Executor) Deploy(ctx context.Context, p executor.Plan) (executor.Result
 		return executor.Result{}, err
 	}
 	return executor.Result{Changed: true, Detail: "blue-green deploy idle=" + idle}, nil
+}
+
+// SwitchTo atomically flips the pointer symlink to the slot's target, then reloads.
+func (e *Executor) SwitchTo(ctx context.Context, slot string) error {
+	target, ok := e.Pointer.Target[slot]
+	if !ok {
+		return fmt.Errorf("unknown slot %q", slot)
+	}
+	tmp := e.Pointer.Link + ".tmp"
+	flip := fmt.Sprintf("ln -sfn %s %s && mv -Tf %s %s",
+		composessh.ShellQuote(target), composessh.ShellQuote(tmp),
+		composessh.ShellQuote(tmp), composessh.ShellQuote(e.Pointer.Link))
+	if _, err := e.Runner.Run(ctx, flip, nil); err != nil {
+		return fmt.Errorf("flip pointer to %s: %w", slot, err)
+	}
+	if _, err := e.Runner.Run(ctx, e.Pointer.Reload, nil); err != nil {
+		return fmt.Errorf("reload after switch to %s: %w", slot, err)
+	}
+	return nil
 }

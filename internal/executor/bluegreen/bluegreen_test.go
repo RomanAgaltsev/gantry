@@ -77,3 +77,18 @@ func TestLiveSlot(t *testing.T) {
 	_, err = bgExec(fr3).LiveSlot(context.Background())
 	require.Error(t, err) // resolves to neither configured target
 }
+
+func TestSwitchTo(t *testing.T) {
+	fr := &fakeRunner{}
+	err := bgExec(fr).SwitchTo(context.Background(), "green")
+	require.NoError(t, err)
+	require.Len(t, fr.cmds, 2) // flip, reload
+	require.Contains(t, fr.cmds[0], "ln -sfn '/etc/nginx/green.conf'")
+	require.Contains(t, fr.cmds[0], "mv -Tf")
+	require.Contains(t, fr.cmds[0], "'/etc/nginx/front.conf'")
+	require.Equal(t, "nginx -s reload", fr.cmds[1])
+}
+
+func TestSwitchTo_UnknownSlot(t *testing.T) {
+	require.Error(t, bgExec(&fakeRunner{}).SwitchTo(context.Background(), "red"))
+}
