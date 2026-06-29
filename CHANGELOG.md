@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0](https://github.com/RomanAgaltsev/gantry/compare/v0.5.0...v0.6.0) (2026-06-29)
+
+
+### Features
+
+* **cli:** build per-env verifiers and pass them into the engine ([c4d6562](https://github.com/RomanAgaltsev/gantry/commit/c4d656267bf07e1e4aeda30589bd1cbaa379762f))
+* **config:** add per-env verify probes and promote.require_healthy ([7d847b1](https://github.com/RomanAgaltsev/gantry/commit/7d847b171f93642be35d256603397ea0d003d93e))
+* **engine:** gate promotion on healthy when promote.require_healthy is ([7a1dcc6](https://github.com/RomanAgaltsev/gantry/commit/7a1dcc6d5f2050f15071085e91ad8132b60fa629))
+* **engine:** run verification after deploy and record the healthy ([e6f688d](https://github.com/RomanAgaltsev/gantry/commit/e6f688dbbc0df3fbf2b2eb6fd38ddc541b65bcd1))
+* health verification ([fa0bf03](https://github.com/RomanAgaltsev/gantry/commit/fa0bf037a696ca58049986acec382c3c5a166546))
+* **ledger:** add LatestHealthy (most recent ok+healthy entry) ([75b4b03](https://github.com/RomanAgaltsev/gantry/commit/75b4b0379bffa7fdb5329e74904bacda0ba6529b))
+* **verify:** add host-side command and compose-ps probes ([1fa9762](https://github.com/RomanAgaltsev/gantry/commit/1fa97628fe26f5ec8ee832b7a0ca36257b8ca053))
+* **verify:** add Verifier interface, Composite, and gantry-side HTTP ([d9003dc](https://github.com/RomanAgaltsev/gantry/commit/d9003dcf57272729dfb05956d649b9d1f7e8c66c))
+
 ## [0.5.0](https://github.com/RomanAgaltsev/gantry/compare/v0.4.0...v0.5.0) (2026-06-29)
 
 
