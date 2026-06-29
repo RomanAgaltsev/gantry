@@ -1,0 +1,99 @@
+package engine
+
+import (
+	"context"
+	"time"
+
+	"github.com/RomanAgaltsev/gantry/internal/config"
+	"github.com/RomanAgaltsev/gantry/internal/forge"
+	"github.com/RomanAgaltsev/gantry/internal/ledger"
+)
+
+// NOTE: the package var `timeNow = time.Now` is ALREADY declared in this package
+// by the (already-implemented) A3 drift detector — `internal/engine/drift.go`.
+// StatusMatrix reuses it; do NOT redeclare it here (a duplicate declaration will
+// not compile). The status_test.go override below shares that same var.
+
+// untrackedRef is the Latest value shown for explicit (registry-sourced) components,
+// which have no gantry-known "latest" release.
+const untrackedRef = "(untracked)"
+
+// EnvHealth is one environment's most recent deploy outcome from the ledger.
+type EnvHealth struct {
+	Env     string
+	Result  string        // ledger Result ("ok"|"failed"); "" when HasData is false
+	Healthy string        // ledger Healthy ("true"|"false"|"unknown"); "" when HasData is false
+	Age     time.Duration // now − newest entry's DeployedAt; 0 when HasData is false
+	HasData bool          // false when the environment has no ledger history yet
+}
+
+// Matrix is the cross-environment read model behind `gantry status --all`:
+// the latest release per component, each environment's pins, which cells lag
+// latest, and each environment's health. Computed live; nothing is stored.
+type Matrix struct {
+	Components   []string                     // pin keys, config order
+	Environments []string                     // env names, config order
+	Latest       map[string]string            // pinKey -> latest ref or "(untracked)"
+	Pins         map[string]map[string]string // env -> pinKey -> pinned ref ("" if absent)
+	Drift        map[string]map[string]bool   // env -> pinKey -> pin lags latest (tracked only)
+	Health       []EnvHealth                  // per environment, Environments order
+}
+
+// StatusMatrix builds the status matrix. It fetches each component's latest
+// release once (a property of the component, not the environment), reads every
+// environment's pin file, and reads each environment's newest ledger entry.
+// Read-only: no commit, no deploy.
+func StatusMatrix(ctx context.Context, cfg *config.Config, f forge.Forge, store PinStore, led ledger.Ledger) (Matrix, error) {
+	m := Matrix{
+		Latest: map[string]string{},
+		Pins:   map[string]map[string]string{},
+		Drift:  map[string]map[string]bool{},
+	}
+
+	// Latest per component (once, C1-D6).
+	for _, comp := range cfg.Components {
+		m.Components = append(m.Components, comp.PinKey)
+		if comp.IsExplicit() {
+			m.Latest[comp.PinKey] = untrackedRef
+			continue
+		}
+		rel, err := f.LatestRelease(ctx, forge.Component{ID: comp.ID, Project: comp.Project, PinKey: comp.PinKey})
+		if err != nil {
+			return Matrix{}, err
+		}
+		m.Latest[comp.PinKey] = rel.ImageRef()
+	}
+
+	// Pins + drift + health per environment.
+	now := timeNow()
+	for _, env := range cfg.Environments {
+		m.Environments = append(m.Environments, env.Name)
+
+		pins, err := store.Read(env.PinFile)
+		if err != nil {
+			return Matrix{}, err
+		}
+		cells := map[string]string{}
+		drift := map[string]bool{}
+		for _, comp := range cfg.Components {
+			ref := pins[comp.PinKey]
+			cells[comp.PinKey] = ref
+			drift[comp.PinKey] = !comp.IsExplicit() && ref != "" && ref != m.Latest[comp.PinKey]
+		}
+		m.Pins[env.Name] = cells
+		m.Drift[env.Name] = drift
+
+		hist, err := led.History(env.Name)
+		if err != nil {
+			return Matrix{}, err
+		}
+		h := EnvHealth{Env: env.Name}
+		if len(hist) > 0 {
+			e := hist[0] // newest first
+			h.Result, h.Healthy, h.Age, h.HasData = e.Result, e.Healthy, now.Sub(e.DeployedAt), true
+		}
+		m.Health = append(m.Health, h)
+	}
+
+	return m, nil
+}

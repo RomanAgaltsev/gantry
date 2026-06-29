@@ -24,6 +24,7 @@ func (f fakeForge) LatestRelease(_ context.Context, c forge.Component) (forge.Re
 
 type fakeStore struct {
 	cur       pin.Set
+	byFile    map[string]pin.Set // when set, Read returns per-pinFile pins (matrix tests)
 	committed pin.Set
 	msg       string
 	headSHA   string             // LatestCommit returns this
@@ -32,7 +33,12 @@ type fakeStore struct {
 	resolve   map[string]string  // Resolve lookups (unmapped revs return unchanged)
 }
 
-func (s *fakeStore) Read(string) (pin.Set, error) { return s.cur, nil }
+func (s *fakeStore) Read(pinFile string) (pin.Set, error) {
+	if s.byFile != nil {
+		return s.byFile[pinFile], nil
+	}
+	return s.cur, nil
+}
 
 func (s *fakeStore) Resolve(rev string) (string, error) {
 	if full, ok := s.resolve[rev]; ok {
