@@ -25,7 +25,7 @@ func TestPromote_DefaultGreenSHA(t *testing.T) {
 	ex := &fakeExec{}
 	led := &fakeLedger{entries: []ledger.Entry{{Environment: "test", PinCommit: "g1", Result: "ok"}}}
 
-	res, err := Promote(context.Background(), promoteCfg(), "test", "prod", "", ex, store, led, PromoteOptions{})
+	res, err := Promote(context.Background(), promoteCfg(), "test", "prod", "", ex, nil, store, led, PromoteOptions{})
 	require.NoError(t, err)
 	require.Equal(t, "g1", res.FromSHA)
 	require.True(t, res.Deployed)
@@ -44,7 +44,7 @@ func TestPromote_ResolvesShortSHA(t *testing.T) {
 	}
 	led := &fakeLedger{entries: []ledger.Entry{{Environment: "test", PinCommit: "fullsha", Result: "ok"}}}
 
-	res, err := Promote(context.Background(), promoteCfg(), "test", "prod", "short", &fakeExec{}, store, led, PromoteOptions{})
+	res, err := Promote(context.Background(), promoteCfg(), "test", "prod", "short", &fakeExec{}, nil, store, led, PromoteOptions{})
 	require.NoError(t, err)
 	require.Equal(t, "fullsha", res.FromSHA) // gate + snapshot used the resolved full SHA
 }
@@ -52,29 +52,78 @@ func TestPromote_ResolvesShortSHA(t *testing.T) {
 func TestPromote_RefusesMissingGate(t *testing.T) {
 	store := &fakeStore{atSHA: map[string]pin.Set{"x": {"SVC_IMAGE": "reg/svc:v2"}}}
 	led := &fakeLedger{} // no entry for (test, x)
-	_, err := Promote(context.Background(), promoteCfg(), "test", "prod", "x", &fakeExec{}, store, led, PromoteOptions{})
+	_, err := Promote(context.Background(), promoteCfg(), "test", "prod", "x", &fakeExec{}, nil, store, led, PromoteOptions{})
 	require.ErrorContains(t, err, "no deploy record")
 }
 
 func TestPromote_RefusesFailedGate(t *testing.T) {
 	store := &fakeStore{atSHA: map[string]pin.Set{"x": {"SVC_IMAGE": "reg/svc:v2"}}}
 	led := &fakeLedger{entries: []ledger.Entry{{Environment: "test", PinCommit: "x", Result: "failed"}}}
-	_, err := Promote(context.Background(), promoteCfg(), "test", "prod", "x", &fakeExec{}, store, led, PromoteOptions{})
+	_, err := Promote(context.Background(), promoteCfg(), "test", "prod", "x", &fakeExec{}, nil, store, led, PromoteOptions{})
 	require.ErrorContains(t, err, "not ok")
 }
 
 func TestPromote_NoGreenToPromote(t *testing.T) {
 	store := &fakeStore{}
 	led := &fakeLedger{}
-	_, err := Promote(context.Background(), promoteCfg(), "test", "prod", "", &fakeExec{}, store, led, PromoteOptions{})
+	_, err := Promote(context.Background(), promoteCfg(), "test", "prod", "", &fakeExec{}, nil, store, led, PromoteOptions{})
 	require.ErrorContains(t, err, "no green deploy")
+}
+
+func TestPromote_RequireHealthy(t *testing.T) {
+	cfg := func() *config.Config {
+		c := promoteCfg()
+		c.Promote.RequireHealthy = true
+		return c
+	}
+
+	t.Run("default path refuses ok-but-unknown source", func(t *testing.T) {
+		store := &fakeStore{atSHA: map[string]pin.Set{"g1": {"SVC_IMAGE": "reg/svc:v2"}}}
+		led := &fakeLedger{entries: []ledger.Entry{
+			{Environment: "test", PinCommit: "g1", Result: "ok", Healthy: "unknown"},
+		}}
+		_, err := Promote(context.Background(), cfg(), "test", "prod", "", &fakeExec{}, nil, store, led, PromoteOptions{})
+		require.ErrorContains(t, err, "healthy")
+	})
+
+	t.Run("default path promotes green+healthy source", func(t *testing.T) {
+		store := &fakeStore{atSHA: map[string]pin.Set{"g1": {"SVC_IMAGE": "reg/svc:v2"}}}
+		led := &fakeLedger{entries: []ledger.Entry{
+			{Environment: "test", PinCommit: "g0", Result: "ok", Healthy: "unknown"},
+			{Environment: "test", PinCommit: "g1", Result: "ok", Healthy: "true"},
+		}}
+		res, err := Promote(context.Background(), cfg(), "test", "prod", "", &fakeExec{}, nil, store, led, PromoteOptions{})
+		require.NoError(t, err)
+		require.Equal(t, "g1", res.FromSHA) // snapshotted the healthy entry, not the unknown one
+		require.True(t, res.Deployed)
+	})
+
+	t.Run("explicit --sha refuses ok-but-unknown entry", func(t *testing.T) {
+		store := &fakeStore{atSHA: map[string]pin.Set{"x": {"SVC_IMAGE": "reg/svc:v2"}}}
+		led := &fakeLedger{entries: []ledger.Entry{
+			{Environment: "test", PinCommit: "x", Result: "ok", Healthy: "unknown"},
+		}}
+		_, err := Promote(context.Background(), cfg(), "test", "prod", "x", &fakeExec{}, nil, store, led, PromoteOptions{})
+		require.ErrorContains(t, err, "healthy")
+	})
+
+	t.Run("default false promotes ok-but-unknown entry (A2 behavior)", func(t *testing.T) {
+		store := &fakeStore{atSHA: map[string]pin.Set{"g1": {"SVC_IMAGE": "reg/svc:v2"}}}
+		led := &fakeLedger{entries: []ledger.Entry{
+			{Environment: "test", PinCommit: "g1", Result: "ok", Healthy: "unknown"},
+		}}
+		res, err := Promote(context.Background(), promoteCfg(), "test", "prod", "", &fakeExec{}, nil, store, led, PromoteOptions{})
+		require.NoError(t, err)
+		require.Equal(t, "g1", res.FromSHA)
+		require.True(t, res.Deployed)
+	})
 }
 
 func TestPromote_DryRun(t *testing.T) {
 	store := &fakeStore{atSHA: map[string]pin.Set{"g1": {"SVC_IMAGE": "reg/svc:v2"}}}
 	ex := &fakeExec{}
 	led := &fakeLedger{entries: []ledger.Entry{{Environment: "test", PinCommit: "g1", Result: "ok"}}}
-	res, err := Promote(context.Background(), promoteCfg(), "test", "prod", "", ex, store, led, PromoteOptions{DryRun: true})
+	res, err := Promote(context.Background(), promoteCfg(), "test", "prod", "", ex, nil, store, led, PromoteOptions{DryRun: true})
 	require.NoError(t, err)
 	require.True(t, res.DryRun)
 	require.False(t, ex.called)

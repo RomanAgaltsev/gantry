@@ -12,8 +12,9 @@ Each `sync`, `deploy`, `promote`, and `rollback` appends one JSON line:
 {"environment":"test","pin_commit":"<sha>","result":"ok","healthy":"unknown","image_set":{"SVC_IMAGE":"reg/svc:v2"},"deployed_at":"2026-06-22T10:00:00Z","by":"sync"}
 ```
 
-`result` is `ok` or `failed`. `healthy` is `unknown` today; post-deploy health
-verification (a later slice) sets it to `true`/`false` and lets promotion require it.
+`result` is `ok` or `failed`. `healthy` is `unknown` unless the environment runs
+[post-deploy verification](verification.md), which sets it to `true`/`false` and lets
+promotion require it.
 
 View it per environment:
 
@@ -36,6 +37,12 @@ The set is a **frozen snapshot**: gantry never promotes "the current upstream pi
 the file as committed at the chosen SHA, so a poller advancing `test` after your decision
 cannot leak an unvalidated set into `prod`. Promotion is **gated**: gantry refuses a SHA
 whose `test` deploy is missing from the ledger or was not `ok`.
+
+By default the gate requires a green (`ok`) ledger entry. Setting
+`promote.require_healthy: true` tightens it: gantry then accepts only a source revision
+that is `ok` **and** `healthy: true` — i.e. one whose [post-deploy verification](verification.md)
+passed. With no `--sha`, this also changes "latest green" to "latest healthy". The flag
+defaults `false`, so an environment without verification keeps the green-only behavior.
 
 Promotion is wholesale — the full set that was green together moves in one commit.
 

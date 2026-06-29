@@ -5,6 +5,8 @@ forge:
   metadata_marker: gantry-release-metadata
 drift:
   threshold: 7d
+promote:
+  require_healthy: true
 connections:
   app-host:
     address: 192.0.2.10
@@ -32,6 +34,8 @@ environments:
       project_dir: /opt/demo
       compose_files: [compose.yaml]
       env_file: .env.versions.test
+    verify:
+      - { kind: compose-ps }
   - name: prod
     source: { promote_from: test }
     pin_file: .env.versions.prod
@@ -41,3 +45,6 @@ environments:
       project_dir: /opt/app
       compose_files: [compose.yaml]
       env_file: .env.versions.prod
+    verify:
+      - { kind: http, url: https://app.example.com/healthz, expect_status: 200 }
+      - { kind: compose-ps }
