@@ -17,6 +17,21 @@ type Config struct {
 	Registries   map[string]Registry   `yaml:"registries"`
 	Git          GitConfig             `yaml:"git"`
 	Drift        DriftConfig           `yaml:"drift"`
+	Promote      PromoteConfig         `yaml:"promote"`
+}
+
+// PromoteConfig tunes the promotion gate. Optional; require_healthy defaults false so
+// enabling verification never retroactively breaks an existing config.
+type PromoteConfig struct {
+	RequireHealthy bool `yaml:"require_healthy"`
+}
+
+// VerifyProbe is one post-deploy health check for an environment.
+type VerifyProbe struct {
+	Kind         string `yaml:"kind"`          // "http" | "compose-ps" | "command"
+	URL          string `yaml:"url"`           // http
+	ExpectStatus int    `yaml:"expect_status"` // http, default 200
+	Command      string `yaml:"command"`       // command
 }
 
 // GitConfig sets the identity gantry stamps on the pin commits it makes.
@@ -67,6 +82,7 @@ type Environment struct {
 	Source   Source         `yaml:"source"`
 	PinFile  string         `yaml:"pin_file"`
 	Executor ExecutorConfig `yaml:"executor"`
+	Verify   []VerifyProbe  `yaml:"verify"`
 }
 
 // Source declares how an environment's pins are computed.
@@ -138,6 +154,15 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
+	for i := range c.Environments {
+		for j := range c.Environments[i].Verify {
+			p := &c.Environments[i].Verify[j]
+			if p.Kind == "http" && p.ExpectStatus == 0 {
+				p.ExpectStatus = 200
+			}
+		}
+	}
+
 	if err := c.validate(); err != nil {
 		return nil, err
 	}
@@ -205,6 +230,29 @@ func (c *Config) validateEnvironments() error {
 		if env.Executor.Kind == "compose-over-ssh" && conn.SSH == nil {
 			return fmt.Errorf("environment %q: connection %q requires an ssh block for compose-over-ssh",
 				env.Name, env.Executor.Connection)
+		}
+		if err := validateVerifyProbes(env); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateVerifyProbes(env Environment) error {
+	for _, p := range env.Verify {
+		switch p.Kind {
+		case "http":
+			if p.URL == "" {
+				return fmt.Errorf("environment %q: http verify probe requires url", env.Name)
+			}
+		case "command":
+			if p.Command == "" {
+				return fmt.Errorf("environment %q: command verify probe requires command", env.Name)
+			}
+		case "compose-ps":
+			// no extra fields; reuses the environment's executor compose settings
+		default:
+			return fmt.Errorf("environment %q: unsupported verify kind %q (want http|compose-ps|command)", env.Name, p.Kind)
 		}
 	}
 	return nil

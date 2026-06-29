@@ -212,3 +212,55 @@ environments:
 	require.Contains(t, err.Error(), "gitlab")
 	require.Contains(t, err.Error(), "github")
 }
+
+func TestLoad_VerifyProbes(t *testing.T) {
+	const cfg = `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+promote: { require_healthy: true }
+connections:
+  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
+components:
+  - { id: svc, project: grp/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    verify:
+      - { kind: http, url: https://app/healthz }
+      - { kind: compose-ps }
+      - { kind: command, command: "test -f /opt/.ready" }
+    executor: { kind: compose-over-ssh, connection: h, project_dir: /o }
+`
+	c, err := Load(writeCfg(t, cfg))
+	require.NoError(t, err)
+	require.True(t, c.Promote.RequireHealthy)
+	env, _ := c.Environment("test")
+	require.Len(t, env.Verify, 3)
+	require.Equal(t, 200, env.Verify[0].ExpectStatus) // defaulted
+}
+
+func TestLoad_VerifyInvalid(t *testing.T) {
+	base := func(probe string) string {
+		return `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+connections:
+  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
+components:
+  - { id: svc, project: grp/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    verify: [ ` + probe + ` ]
+    executor: { kind: compose-over-ssh, connection: h, project_dir: /o }
+`
+	}
+	for _, probe := range []string{
+		`{ kind: ftp }`,     // unknown kind
+		`{ kind: http }`,    // http without url
+		`{ kind: command }`, // command without command
+	} {
+		_, err := Load(writeCfg(t, base(probe)))
+		require.Error(t, err, probe)
+	}
+}
