@@ -424,3 +424,16 @@ func TestSwitch_NonSlotExecutor(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "blue-green")
 }
+
+func TestRollback_BlueGreenFlipsBack(t *testing.T) {
+	cfg := bgCfg()
+	store := &fakeStore{headSHA: "h2"}
+	led := &fakeLedger{}
+	se := &fakeSlotExec{live: "green"} // green live -> roll back to blue
+	res, err := Rollback(context.Background(), cfg, "front", se, nil, store, led, RollbackOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "blue", se.switchedTo)
+	require.Equal(t, "blue", res.Slot)
+	require.True(t, res.Deployed)
+	require.Equal(t, "rollback", led.entries[len(led.entries)-1].By)
+}

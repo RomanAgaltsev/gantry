@@ -332,6 +332,7 @@ type RollbackResult struct {
 	Committed string  // the new commit recording the rollback (or the existing one if unchanged)
 	Deployed  bool
 	DryRun    bool
+	Slot      string // blue-green: the slot now live after the flip-back ("" for file-model)
 }
 
 // Rollback restores env to the most recent GREEN deploy older than its current pin commit,
@@ -343,6 +344,9 @@ func Rollback(ctx context.Context, cfg *config.Config, envName string, ex execut
 	env, ok := cfg.Environment(envName)
 	if !ok {
 		return RollbackResult{}, fmt.Errorf("environment %q not found", envName)
+	}
+	if se, ok := ex.(executor.SlotExecutor); ok {
+		return slotRollback(ctx, envName, env.PinFile, se, store, led, opts)
 	}
 	last, err := store.LatestCommit(env.PinFile)
 	if errors.Is(err, ErrNoHistory) {
@@ -385,6 +389,41 @@ func Rollback(ctx context.Context, cfg *config.Config, envName string, ex execut
 		return RollbackResult{ToSHA: target, Pins: pins, Committed: newSHA}, err
 	}
 	return RollbackResult{ToSHA: target, Pins: pins, Committed: newSHA, Deployed: true}, nil
+}
+
+// slotRollback rolls a blue-green environment back by flipping the pointer to the other
+// (previously-live) slot, which still runs the prior version.
+func slotRollback(ctx context.Context, envName, pinFile string, se executor.SlotExecutor, store PinStore, led ledger.Ledger, opts RollbackOptions) (RollbackResult, error) {
+	live, err := se.LiveSlot(ctx)
+	if err != nil {
+		return RollbackResult{}, err
+	}
+	if live == "" {
+		return RollbackResult{}, fmt.Errorf("environment %q has no live slot to roll back from", envName)
+	}
+	a, b := se.Slots()
+	target := otherSlot(a, b, live)
+	if opts.DryRun {
+		return RollbackResult{Slot: target, DryRun: true}, nil
+	}
+	if err := se.SwitchTo(ctx, target); err != nil {
+		return RollbackResult{Slot: target}, err
+	}
+	head, err := store.LatestCommit(pinFile)
+	if err != nil && !errors.Is(err, ErrNoHistory) {
+		return RollbackResult{Slot: target, Deployed: true}, err
+	}
+	rec := ledger.Entry{
+		Environment: envName,
+		PinCommit:   head,
+		Result:      "ok",
+		DeployedAt:  time.Now(),
+		By:          "rollback",
+	}
+	if err := led.Record(rec); err != nil {
+		return RollbackResult{Slot: target, Deployed: true}, err
+	}
+	return RollbackResult{Slot: target, Deployed: true}, nil
 }
 
 // SwitchResult reports a blue-green pointer switch.
