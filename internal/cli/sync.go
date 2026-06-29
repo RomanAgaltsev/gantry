@@ -21,7 +21,7 @@ type deps struct {
 	cfg    *config.Config
 	forge  forge.Forge
 	exec   executor.Executor
-	verify verify.Verifier //nolint:unused // -
+	verify verify.Verifier
 	store  engine.PinStore
 	ledger ledger.Ledger
 	env    string
@@ -61,6 +61,7 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 
 	conn := cfg.Connections[env.Executor.Connection]
 	var ex executor.Executor
+	var vf verify.Verifier
 	if needExec && conn.SSH != nil {
 		logins, err := resolveLogins(res, cfg.Registries)
 		if err != nil {
@@ -85,6 +86,7 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 			EnvFile:      env.Executor.EnvFile,
 			Logins:       logins,
 		}
+		vf = buildVerifiers(env.Verify, runner, env.Executor)
 	}
 
 	// Pin files are tracked in the git repo alongside gantry.yaml.
@@ -98,7 +100,7 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 	if err != nil {
 		return nil, err
 	}
-	return &deps{cfg: cfg, forge: f, exec: ex, store: store, ledger: led, env: envName}, nil
+	return &deps{cfg: cfg, forge: f, exec: ex, verify: vf, store: store, ledger: led, env: envName}, nil
 }
 
 // resolveLogins resolves each registry's credentials for the executor to log in with.
@@ -129,7 +131,7 @@ func newSyncCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := engine.Sync(cmd.Context(), d.cfg, d.env, d.forge, d.exec, nil, d.store, d.ledger, engine.SyncOptions{DryRun: dryRun})
+			res, err := engine.Sync(cmd.Context(), d.cfg, d.env, d.forge, d.exec, d.verify, d.store, d.ledger, engine.SyncOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
