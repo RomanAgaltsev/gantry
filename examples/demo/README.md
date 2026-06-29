@@ -58,6 +58,14 @@ gantry rollback --env prod --config examples/demo/gantry.yaml
 `up to date; no changes` when the pins already match the latest releases. `sync` is a
 no-op when nothing changed — it commits and deploys only on a real diff.
 
+### See everything at a glance
+
+`gantry status --all` prints the cross-environment matrix — which version is
+pinned where, what the latest release is (with a `!` on anything that lags),
+and each environment's last deploy health. Add `--log-format json` to any
+command to get structured logs on stderr.
+
+
 ## The explicit-pin component
 
 `POSTGRES_IMAGE` is maintained directly in `.env.versions.test`, not derived from a

@@ -85,3 +85,7 @@ gantry history --env prod
 
 Each line is one outcome: timestamp, `ok`/`failed`, `healthy`, `by` (sync/deploy/
 promote/rollback), and the pin commit SHA.
+
+- **See everything at a glance:** `gantry status --all` — the cross-environment
+  version + health matrix (reads forge + pin files + ledger; resolves no SSH or
+  registry secrets).
