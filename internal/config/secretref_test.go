@@ -9,11 +9,15 @@ import (
 
 func testResolver() SecretResolver {
 	return SecretResolver{
-		Getenv: func(k string) string {
-			if k == "TOK" {
-				return "s3cret"
+		LookupEnv: func(k string) (string, bool) {
+			switch k {
+			case "TOK":
+				return "s3cret", true
+			case "EMPTY":
+				return "", true // explicitly set to empty
+			default:
+				return "", false // unset
 			}
-			return ""
 		},
 		ReadFile: func(p string) ([]byte, error) {
 			if p == "/run/secrets/key" {
@@ -34,6 +38,17 @@ func TestResolve_File_Trimmed(t *testing.T) {
 	v, err := testResolver().Resolve(SecretRef{Raw: "${file:/run/secrets/key}"})
 	require.NoError(t, err)
 	require.Equal(t, "FILEDATA", v)
+}
+
+func TestResolve_Env_UnsetIsError(t *testing.T) {
+	_, err := testResolver().Resolve(SecretRef{Raw: "${env:MISSING}"})
+	require.ErrorContains(t, err, "not set")
+}
+
+func TestResolve_Env_ExplicitEmptyIsAllowed(t *testing.T) {
+	v, err := testResolver().Resolve(SecretRef{Raw: "${env:EMPTY}"})
+	require.NoError(t, err)
+	require.Equal(t, "", v)
 }
 
 func TestResolve_InlineSecretRejected(t *testing.T) {

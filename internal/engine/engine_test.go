@@ -372,6 +372,44 @@ func TestDeployAndRecord_VerifyMatrix(t *testing.T) {
 	})
 }
 
+// TestSync_ThreadsVerifier guards the seam that once silently dropped the verifier: a
+// configured probe must actually run through Sync (not just through deployAndRecord).
+func TestSync_ThreadsVerifier(t *testing.T) {
+	t.Run("passing probe records healthy=true", func(t *testing.T) {
+		f := fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v2"}}
+		store := &fakeStore{cur: pin.Set{"SVC_IMAGE": "reg/svc:v1"}}
+		led := &fakeLedger{}
+
+		_, err := Sync(context.Background(), cfg(), "test", f, &fakeExec{}, fakeVerifier{nil}, store, led, SyncOptions{})
+		require.NoError(t, err)
+		require.Equal(t, "true", led.entries[0].Healthy)
+	})
+
+	t.Run("failing probe fails the sync and records healthy=false", func(t *testing.T) {
+		f := fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v2"}}
+		store := &fakeStore{cur: pin.Set{"SVC_IMAGE": "reg/svc:v1"}}
+		led := &fakeLedger{}
+
+		_, err := Sync(context.Background(), cfg(), "test", f, &fakeExec{}, fakeVerifier{errors.New("503")}, store, led, SyncOptions{})
+		require.ErrorContains(t, err, "verify")
+		require.Equal(t, "failed", led.entries[0].Result)
+		require.Equal(t, "false", led.entries[0].Healthy)
+	})
+}
+
+// TestDeploy_ThreadsVerifier is the same guard for the Deploy path.
+func TestDeploy_ThreadsVerifier(t *testing.T) {
+	store := &fakeStore{cur: pin.Set{"K": "img:v1"}, headSHA: "h1"}
+	c := &config.Config{Environments: []config.Environment{
+		{Name: "test", Source: config.Source{Track: "latest"}, PinFile: ".env.versions.test"},
+	}}
+	led := &fakeLedger{}
+
+	_, err := Deploy(context.Background(), c, "test", &fakeExec{}, fakeVerifier{errors.New("503")}, store, led)
+	require.ErrorContains(t, err, "verify")
+	require.Equal(t, "false", led.entries[0].Healthy)
+}
+
 func TestDeploy_SetsPlanCommit(t *testing.T) {
 	cfg := &config.Config{Environments: []config.Environment{
 		{Name: "test", Source: config.Source{Track: "latest"}, PinFile: ".env.versions.test"},
@@ -442,4 +480,5 @@ func TestRollback_BlueGreenFlipsBack(t *testing.T) {
 	require.Equal(t, "blue", res.Slot)
 	require.True(t, res.Deployed)
 	require.Equal(t, "rollback", led.entries[len(led.entries)-1].By)
+	require.Equal(t, "unknown", led.entries[len(led.entries)-1].Healthy) // flip does not verify health
 }

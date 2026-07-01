@@ -20,13 +20,13 @@ func (s *SecretRef) UnmarshalYAML(value *yaml.Node) error {
 
 // SecretResolver resolves SecretRefs against the environment and filesystem.
 type SecretResolver struct {
-	Getenv   func(string) string
-	ReadFile func(string) ([]byte, error)
+	LookupEnv func(string) (string, bool)
+	ReadFile  func(string) ([]byte, error)
 }
 
 // DefaultResolver resolves against the real OS environment and filesystem.
 func DefaultResolver() SecretResolver {
-	return SecretResolver{Getenv: os.Getenv, ReadFile: os.ReadFile}
+	return SecretResolver{LookupEnv: os.LookupEnv, ReadFile: os.ReadFile}
 }
 
 // Resolve returns the secret value for a ref. Empty ref → "". Inline (non-${...}) → error.
@@ -45,7 +45,15 @@ func (r SecretResolver) Resolve(s SecretRef) (string, error) {
 	}
 	switch scheme {
 	case "env":
-		return r.Getenv(arg), nil
+		// A referenced-but-unset variable is a configuration error, not an empty secret:
+		// silently resolving to "" turns a typo'd ${env:NAME} into an unauthenticated
+		// request or an empty docker-login password that fails far from the cause. An
+		// explicitly set-but-empty variable still resolves to "".
+		v, ok := r.LookupEnv(arg)
+		if !ok {
+			return "", fmt.Errorf("secret env var %q is referenced but not set", arg)
+		}
+		return v, nil
 	case "file":
 		b, err := r.ReadFile(arg)
 		if err != nil {

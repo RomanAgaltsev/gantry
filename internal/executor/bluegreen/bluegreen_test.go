@@ -21,7 +21,7 @@ type fakeRunner struct {
 func (f *fakeRunner) Run(_ context.Context, cmd string, stdin []byte) (string, error) {
 	f.cmds = append(f.cmds, cmd)
 	f.stdins = append(f.stdins, stdin)
-	if strings.HasPrefix(cmd, "readlink") {
+	if strings.Contains(cmd, "readlink") {
 		return f.readlink, f.readlinkErr
 	}
 	return "", nil
@@ -56,10 +56,17 @@ func TestDeploy_StagesIdleSlot(t *testing.T) {
 }
 
 func TestDeploy_BootstrapStagesBlue(t *testing.T) {
-	fr := &fakeRunner{readlinkErr: context.DeadlineExceeded} // link missing -> bootstrap
+	fr := &fakeRunner{readlink: ""} // no pointer yet (empty probe output) -> bootstrap
 	res, err := bgExec(fr).Deploy(context.Background(), executor.Plan{Pins: pin.Set{"K": "img:v1"}})
 	require.NoError(t, err)
 	require.Contains(t, res.Detail, "idle=blue")
+}
+
+func TestDeploy_PointerErrorIsNotMaskedAsBootstrap(t *testing.T) {
+	fr := &fakeRunner{readlinkErr: context.DeadlineExceeded} // transport failure, not a missing link
+	_, err := bgExec(fr).Deploy(context.Background(), executor.Plan{Pins: pin.Set{"K": "img:v1"}})
+	require.Error(t, err) // must surface, not silently stage blue
+	require.NotContains(t, strings.Join(fr.cmds, "\n"), "cat >")
 }
 
 func TestLiveSlot(t *testing.T) {
@@ -68,14 +75,18 @@ func TestLiveSlot(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "blue", live)
 
-	fr2 := &fakeRunner{readlinkErr: context.DeadlineExceeded}
+	fr2 := &fakeRunner{readlink: ""} // no pointer -> bootstrap
 	live, err = bgExec(fr2).LiveSlot(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, "", live) // unset -> bootstrap
+	require.Equal(t, "", live)
 
 	fr3 := &fakeRunner{readlink: "/etc/nginx/unknown.conf"}
 	_, err = bgExec(fr3).LiveSlot(context.Background())
 	require.Error(t, err) // resolves to neither configured target
+
+	fr4 := &fakeRunner{readlinkErr: context.DeadlineExceeded}
+	_, err = bgExec(fr4).LiveSlot(context.Background())
+	require.Error(t, err) // a transport error is propagated, not masked as bootstrap
 }
 
 func TestSwitchTo(t *testing.T) {
