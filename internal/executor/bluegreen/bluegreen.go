@@ -52,16 +52,25 @@ func (e *Executor) other(live string) string {
 	return e.Order[0]
 }
 
-// LiveSlot reads the pointer symlink and maps it to a slot. A missing/unreadable link means
-// no live slot yet (bootstrap) and returns ("", nil).
+// noLinkSentinel is echoed by the pointer probe when the link does not exist, letting
+// LiveSlot tell a genuine bootstrap (no pointer yet) apart from a transport failure. It
+// must be a string readlink can never produce for a configured target.
+const noLinkSentinel = "__gantry_no_link__"
+
+// LiveSlot reads the pointer symlink and maps it to a slot. A genuinely absent pointer means
+// no live slot yet (bootstrap) and returns ("", nil). A runner/transport error is propagated
+// rather than masked as bootstrap, so a flaky SSH connection can't silently make Deploy stage
+// the wrong slot.
 func (e *Executor) LiveSlot(ctx context.Context) (string, error) {
-	out, err := e.Runner.Run(ctx, "readlink "+composessh.ShellQuote(e.Pointer.Link), nil)
+	link := composessh.ShellQuote(e.Pointer.Link)
+	probe := fmt.Sprintf("if [ -L %s ]; then readlink %s; else echo %s; fi", link, link, noLinkSentinel)
+	out, err := e.Runner.Run(ctx, probe, nil)
 	if err != nil {
-		return "", nil //nolint:nilerr // an unreadable link means "no live slot yet" (bootstrap)
+		return "", fmt.Errorf("read pointer %s: %w", e.Pointer.Link, err)
 	}
 	target := strings.TrimSpace(out)
-	if target == "" {
-		return "", nil
+	if target == "" || target == noLinkSentinel {
+		return "", nil // no pointer yet: bootstrap
 	}
 	for slot, t := range e.Pointer.Target {
 		if t == target {
