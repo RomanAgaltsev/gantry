@@ -58,8 +58,28 @@ func (r *sshRunner) Run(ctx context.Context, cmd string, stdin []byte) (string, 
 	if stdin != nil {
 		sess.Stdin = bytes.NewReader(stdin)
 	}
-	out, err := sess.CombinedOutput(cmd)
-	return string(out), err
+
+	// CombinedOutput has no context awareness, so a hung remote command (e.g. a stuck
+	// `docker compose pull`) would block forever. Run it on a goroutine and close the
+	// session on cancellation, which unblocks the RPC with an error.
+	type outcome struct {
+		out []byte
+		err error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		out, err := sess.CombinedOutput(cmd)
+		done <- outcome{out, err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		_ = sess.Close() //nolint:gosec // best-effort close to interrupt the blocked command
+		<-done           // let the goroutine observe the closed session and exit (no leak)
+		return "", ctx.Err()
+	case res := <-done:
+		return string(res.out), res.err
+	}
 }
 
 // dial returns a connected SSH client, dialing once and caching it so a deploy's
