@@ -85,7 +85,7 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 
 	changes := pin.Diff(current, merged)
 	if len(changes) == 0 {
-		return ensureGreen(ctx, envName, env.PinFile, current, ex, nil, store, led, opts)
+		return ensureGreen(ctx, envName, env.PinFile, current, ex, vf, store, led, opts)
 	}
 	if opts.DryRun {
 		return SyncResult{Changes: changes}, nil
@@ -97,7 +97,7 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 	}
 	log.Info("pin written", "env", envName, "commit", sha, "changes", len(changes))
 
-	if err := deployAndRecord(ctx, envName, env.PinFile, merged, sha, "sync", ex, nil, led); err != nil {
+	if err := deployAndRecord(ctx, envName, env.PinFile, merged, sha, "sync", ex, vf, led); err != nil {
 		return SyncResult{Changes: changes}, err
 	}
 	return SyncResult{Changes: changes, Deployed: true}, nil
@@ -106,7 +106,7 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 // ensureGreen redeploys the current pins when the latest pin commit lacks a green
 // ledger entry; otherwise it is a no-op. This makes a deploy that failed after its
 // pin commit self-heal on the next Sync.
-func ensureGreen(ctx context.Context, envName, pinFile string, current pin.Set, ex executor.Executor, _ verify.Verifier, store PinStore, led ledger.Ledger, opts SyncOptions) (SyncResult, error) {
+func ensureGreen(ctx context.Context, envName, pinFile string, current pin.Set, ex executor.Executor, vf verify.Verifier, store PinStore, led ledger.Ledger, opts SyncOptions) (SyncResult, error) {
 	sha, err := store.LatestCommit(pinFile)
 	if errors.Is(err, ErrNoHistory) {
 		return SyncResult{}, nil // nothing was ever committed; nothing to ensure
@@ -124,7 +124,7 @@ func ensureGreen(ctx context.Context, envName, pinFile string, current pin.Set, 
 	if opts.DryRun {
 		return SyncResult{Recovered: true}, nil
 	}
-	if err := deployAndRecord(ctx, envName, pinFile, current, sha, "sync", ex, nil, led); err != nil {
+	if err := deployAndRecord(ctx, envName, pinFile, current, sha, "sync", ex, vf, led); err != nil {
 		return SyncResult{Recovered: true}, err
 	}
 	return SyncResult{Deployed: true, Recovered: true}, nil
@@ -164,7 +164,7 @@ func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor
 	if err != nil {
 		return DeployResult{}, err
 	}
-	if err := deployAndRecord(ctx, envName, env.PinFile, pins, sha, "deploy", ex, nil, led); err != nil {
+	if err := deployAndRecord(ctx, envName, env.PinFile, pins, sha, "deploy", ex, vf, led); err != nil {
 		return DeployResult{}, err
 	}
 	return DeployResult{Pins: pins, Deployed: true}, nil
@@ -316,7 +316,7 @@ func Promote(ctx context.Context, cfg *config.Config, fromEnv, toEnv, sha string
 	if err != nil {
 		return PromoteResult{}, err
 	}
-	if err := deployAndRecord(ctx, toEnv, to.PinFile, pins, newSHA, "promote", ex, nil, led); err != nil {
+	if err := deployAndRecord(ctx, toEnv, to.PinFile, pins, newSHA, "promote", ex, vf, led); err != nil {
 		return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA}, err
 	}
 	return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA, Deployed: true}, nil
@@ -393,7 +393,7 @@ func Rollback(ctx context.Context, cfg *config.Config, envName string, ex execut
 	if err != nil {
 		return RollbackResult{ToSHA: target, Pins: pins}, err
 	}
-	if err := deployAndRecord(ctx, envName, env.PinFile, pins, newSHA, "rollback", ex, nil, led); err != nil {
+	if err := deployAndRecord(ctx, envName, env.PinFile, pins, newSHA, "rollback", ex, vf, led); err != nil {
 		return RollbackResult{ToSHA: target, Pins: pins, Committed: newSHA}, err
 	}
 	return RollbackResult{ToSHA: target, Pins: pins, Committed: newSHA, Deployed: true}, nil
@@ -425,6 +425,7 @@ func slotRollback(ctx context.Context, envName, pinFile string, se executor.Slot
 		Environment: envName,
 		PinCommit:   head,
 		Result:      "ok",
+		Healthy:     "unknown", // a pointer flip does not verify service health
 		DeployedAt:  time.Now(),
 		By:          "rollback",
 	}
