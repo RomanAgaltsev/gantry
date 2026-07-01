@@ -17,6 +17,10 @@ import (
 // can't make gantry hang forever (it is typically run unattended in CI).
 const defaultTimeout = 30 * time.Second
 
+// errBodyLimit caps how much of an error response body is read into the error message,
+// so a misbehaving endpoint can't make gantry buffer an unbounded body.
+const errBodyLimit = 4 << 10 // 4 KiB
+
 // Client reads GitLab Releases for components.
 type Client struct {
 	baseURL string
@@ -55,7 +59,7 @@ func (c *Client) LatestRelease(ctx context.Context, comp forge.Component) (forge
 	}
 	defer func() { _ = resp.Body.Close() }() //nolint:gosec // best-effort close of the response body
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body) //nolint:gosec // body is best-effort context for the error message
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, errBodyLimit)) //nolint:gosec // body is best-effort context for the error message
 		return forge.Release{}, fmt.Errorf("gitlab releases for %q: %s: %s", comp.Project, resp.Status, body)
 	}
 	var rels []apiRelease

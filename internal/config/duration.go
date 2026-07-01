@@ -10,7 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// defaultDriftThreshold is used ahen drift.threshold is unset.
+// defaultDriftThreshold is used when drift.threshold is unset.
 const defaultDriftThreshold = 7 * 24 * time.Hour
 
 // Duration is a time.Duration that unmarshals from YAML, additionally accepting a

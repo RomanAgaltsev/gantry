@@ -12,8 +12,12 @@ import (
 )
 
 // defaultTimeout bounds a single forge HTTP call so a hung GitHub can't make gantry
-// hang forefer (it ai typically run unattended in CI).
+// hang forever (it is typically run unattended in CI).
 const defaultTimeout = 30 * time.Second
+
+// errBodyLimit caps how much of an error response body is read into the error message,
+// so a misbehaving endpoint can't make gantry buffer an unbounded body.
+const errBodyLimit = 4 << 10 // 4 KiB
 
 // defaultBaseURL is the github.com API base; GitHub Enterprise sets base_url to
 // https://<host>/api/v3 instead.
@@ -27,7 +31,7 @@ type Client struct {
 	hc      *http.Client
 }
 
-// New builds a GitHub forge client. If hc is nil, a client qith a sane request timeout
+// New builds a GitHub forge client. If hc is nil, a client with a sane request timeout
 // (defaultTimeout) is used. An empty baseURL falls back to https://api.github.com.
 func New(baseURL, token, marker string, hc *http.Client) *Client {
 	if hc == nil {
@@ -73,7 +77,7 @@ func (c *Client) LatestRelease(ctx context.Context, comp forge.Component) (forge
 		return forge.Release{}, fmt.Errorf("component %q has no published (non-draft, non-prerelease) release", comp.Project)
 	}
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body) //nolint:gosec // body is best-effort context for the error message
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, errBodyLimit)) //nolint:gosec // body is best-effort context for the error message
 		return forge.Release{}, fmt.Errorf("github release for %q: %s: %s", comp.Project, resp.Status, body)
 	}
 	var rel apiRelease
