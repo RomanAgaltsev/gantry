@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.1](https://github.com/RomanAgaltsev/gantry/compare/v0.8.0...v0.8.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* **bluegreen:** surface pointer-read errors instead of assuming bootstrap ([2b68130](https://github.com/RomanAgaltsev/gantry/commit/2b68130523b38e8afdcbaabcebaa87f42d24aa8c))
+* **composessh:** honor context cancellation for remote commands ([817f414](https://github.com/RomanAgaltsev/gantry/commit/817f414c4c67dfcfebe9faee24bd5bec4f39951e))
+* **config:** error when a referenced env secret is unset ([73a86b1](https://github.com/RomanAgaltsev/gantry/commit/73a86b14ddb918bfa830fdbf860cb37cfcc6343a))
+* **config:** reject compose-ps verify on non-compose-over-ssh executors ([d16f253](https://github.com/RomanAgaltsev/gantry/commit/d16f2539783815d1a98d916cba130a7e0a6937ca))
+* **engine:** run the configured verifier during deploy ([c203cdd](https://github.com/RomanAgaltsev/gantry/commit/c203cdd3786a4b3efb5b26d36a6331af7afe4e63))
+* **forge:** bound error-response body reads and fix doc typos ([6f5c50c](https://github.com/RomanAgaltsev/gantry/commit/6f5c50c07b416dba102e9721871148b0bca6b734))
+* review issues ([5ec90ec](https://github.com/RomanAgaltsev/gantry/commit/5ec90ec89b3885eaa4e21d09ef0090c834df49f5))
+
 ## [0.8.0](https://github.com/RomanAgaltsev/gantry/compare/v0.7.0...v0.8.0) (2026-06-29)
 
 
