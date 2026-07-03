@@ -13,18 +13,20 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/executor/composessh"
 	"github.com/RomanAgaltsev/gantry/internal/forge"
 	"github.com/RomanAgaltsev/gantry/internal/ledger"
+	"github.com/RomanAgaltsev/gantry/internal/notify"
 	"github.com/RomanAgaltsev/gantry/internal/pin"
 	"github.com/RomanAgaltsev/gantry/internal/verify"
 )
 
 type deps struct {
-	cfg    *config.Config
-	forge  forge.Forge
-	exec   executor.Executor
-	verify verify.Verifier
-	store  engine.PinStore
-	ledger ledger.Ledger
-	env    string
+	cfg      *config.Config
+	forge    forge.Forge
+	exec     executor.Executor
+	verify   verify.Verifier
+	store    engine.PinStore
+	ledger   ledger.Ledger
+	notifier notify.Dispatcher
+	env      string
 }
 
 // buildDeps wires the engine's collaborators from config. The forge is built only when
@@ -80,7 +82,11 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 	if err != nil {
 		return nil, err
 	}
-	return &deps{cfg: cfg, forge: f, exec: ex, verify: vf, store: store, ledger: led, env: envName}, nil
+	notifier, err := buildNotifier(res, cfg.Notifications)
+	if err != nil {
+		return nil, err
+	}
+	return &deps{cfg: cfg, forge: f, exec: ex, verify: vf, store: store, ledger: led, notifier: notifier, env: envName}, nil
 }
 
 // buildExecAndVerify builds the SSH executor and verifiers for env when needExec is set and
@@ -143,6 +149,7 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 			res, err := engine.Sync(cmd.Context(), d.cfg, d.env, d.forge, d.exec, d.verify, d.store, d.ledger, engine.SyncOptions{DryRun: dryRun})
+			d.notifier.Dispatch(cmd.Context(), syncEvents(envName, res, err)...)
 			if err != nil {
 				if note := autoRollbackNote(envName, res.RolledBackTo); note != "" {
 					cmd.PrintErrln(note)

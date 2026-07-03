@@ -451,3 +451,60 @@ environments:
 	_, err := Load(writeCfg(t, cfg))
 	require.ErrorContains(t, err, "requires at least one verify probe")
 }
+
+func TestLoad_Notifications_OK(t *testing.T) {
+	const cfg = `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+connections:
+  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
+components:
+  - { id: svc, project: grp/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    executor: { kind: compose-over-ssh, connection: h, project_dir: /o }
+notifications:
+  - kind: webhook
+    url: "${env:HOOK}"
+    chat_id: "${env:CHAT}"
+    events: [deployed, verify_failed]
+  - kind: email
+    smtp: { host: smtp.x, port: 587, username: ops, password: "${file:/s}" }
+    from: gantry@x
+    to: [ops@x]
+`
+	c, err := Load(writeCfg(t, cfg))
+	require.NoError(t, err)
+	require.Len(t, c.Notifications, 2)
+	require.Equal(t, "webhook", c.Notifications[0].Kind)
+	require.Equal(t, []string{"deployed", "verify_failed"}, c.Notifications[0].Events)
+	require.Equal(t, 587, c.Notifications[1].SMTP.Port)
+}
+
+func TestLoad_Notifications_Invalid(t *testing.T) {
+	base := func(block string) string {
+		return `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+connections:
+  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
+components:
+  - { id: svc, project: grp/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    executor: { kind: compose-over-ssh, connection: h, project_dir: /o }
+notifications:
+` + block
+	}
+	for _, block := range []string{
+		"  - { kind: sms, url: x }",                     // unknown kind
+		"  - { kind: webhook }",                         // webhook without url
+		"  - { kind: email, from: g@x, to: [o@x] }",     // email without smtp.host
+		"  - { kind: webhook, url: x, events: [boom] }", // unknown event
+	} {
+		_, err := Load(writeCfg(t, base(block)))
+		require.Error(t, err, block)
+	}
+}
