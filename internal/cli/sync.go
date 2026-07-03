@@ -53,6 +53,7 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 		env = *e
 	}
 	res := config.DefaultResolver()
+	resolveVaultDefaults(&res, cfg)
 
 	var f forge.Forge
 	if needForge {
@@ -87,6 +88,18 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 		return nil, err
 	}
 	return &deps{cfg: cfg, forge: f, exec: ex, verify: vf, store: store, ledger: led, notifier: notifier, env: envName}, nil
+}
+
+// resolveVaultDefaults resolves the ambient secrets.vault address/token onto res so any
+// ${vault:…} ref can use them. Resolution is best-effort: if a vault ref is never used the
+// ambient vars need not be set; a ${vault:…} ref whose token is unset errors clearly at use.
+func resolveVaultDefaults(res *config.SecretResolver, cfg *config.Config) {
+	if addr, err := res.Resolve(cfg.Secrets.Vault.Address); err == nil {
+		res.Vault.Address = addr
+	}
+	if tok, err := res.Resolve(cfg.Secrets.Vault.Token); err == nil {
+		res.Vault.Token = tok
+	}
 }
 
 // buildExecAndVerify builds the SSH executor and verifiers for env when needExec is set and
