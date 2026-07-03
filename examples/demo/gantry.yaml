@@ -64,3 +64,8 @@ environments:
         blue: /etc/nginx/conf.d/upstream-blue.conf
         green: /etc/nginx/conf.d/upstream-green.conf
         reload: "nginx -s reload"
+notifications:
+  - kind: webhook
+    url: ${env:GANTRY_WEBHOOK_URL} # e.g. a Telegram sendMessage URL or any JSON sink
+    chat_id: ${env:GANTRY_TELEGRAM_CHAT_ID}
+    events: [deployed, promoted, rolled_back, verify_failed, drift_alarm]
