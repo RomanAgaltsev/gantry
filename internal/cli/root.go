@@ -45,6 +45,7 @@ func NewRootCmd() *cobra.Command {
 		newHistoryCmd(),
 		newDriftCmd(),
 		newSwitchCmd(),
+		newServeCmd(),
 	)
 
 	return root
