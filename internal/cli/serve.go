@@ -66,6 +66,7 @@ func runServe(cmd *cobra.Command, interval string) error {
 		return err
 	}
 	res := config.DefaultResolver()
+	resolveVaultDefaults(&res, cfg)
 
 	deps, err := serveDeps(cfg, path, res)
 	if err != nil {

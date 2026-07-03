@@ -262,6 +262,13 @@ string with one of these schemes:
 |-------------------|-------------|
 | `${env:NAME}`     | The value of environment variable `NAME`. |
 | `${file:/path}`   | The contents of the file at `/path`, trimmed of surrounding whitespace. |
+| `${cmd:…}`        | A command's stdout, trimmed. |
+| `${sops:…}`       | A key from a SOPS-decrypted file. |
+| `${vault:…}`      | A field from a Vault KV secret. |
+
+The built-in `env`/`file` schemes work everywhere; `cmd`/`sops`/`vault` shell out to host
+binaries. See [secrets.md](secrets.md) for the full scheme reference, the `secrets.vault`
+block, and the binary-dependency caveat.
 
 An empty value resolves to the empty string. **Any other (non-`${...}`) value is an
 error** — gantry refuses to read inline secrets out of the config file. This keeps
