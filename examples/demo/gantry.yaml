@@ -36,6 +36,7 @@ environments:
       env_file: .env.versions.test
     verify:
       - { kind: compose-ps }
+    verify_on_failure: rollback
   - name: prod
     source: { promote_from: test }
     pin_file: .env.versions.prod

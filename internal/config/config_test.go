@@ -372,3 +372,82 @@ environments:
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "green")
 }
+
+func TestLoad_VerifyOnFailure_RollbackValid(t *testing.T) {
+	const cfg = `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+connections:
+  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
+components:
+  - { id: svc, project: grp/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    verify:
+      - { kind: http, url: https://app/healthz }
+    verify_on_failure: rollback
+    executor: { kind: compose-over-ssh, connection: h, project_dir: /o }
+`
+	c, err := Load(writeCfg(t, cfg))
+	require.NoError(t, err)
+	env, _ := c.Environment("test")
+	require.True(t, env.RollbackOnVerifyFailure())
+}
+
+func TestLoad_VerifyOnFailure_DefaultHold(t *testing.T) {
+	const cfg = `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+connections:
+  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
+components:
+  - { id: svc, project: grp/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    executor: { kind: compose-over-ssh, connection: h, project_dir: /o }
+`
+	c, err := Load(writeCfg(t, cfg))
+	require.NoError(t, err)
+	env, _ := c.Environment("test")
+	require.False(t, env.RollbackOnVerifyFailure())
+}
+
+func TestLoad_VerifyOnFailure_InvalidValue(t *testing.T) {
+	const cfg = `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+connections:
+  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
+components:
+  - { id: svc, project: grp/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    verify:
+      - { kind: http, url: https://app/healthz }
+    verify_on_failure: maybe
+    executor: { kind: compose-over-ssh, connection: h, project_dir: /o }
+`
+	_, err := Load(writeCfg(t, cfg))
+	require.ErrorContains(t, err, "verify_on_failure")
+}
+
+func TestLoad_VerifyOnFailure_RollbackRequiresProbes(t *testing.T) {
+	const cfg = `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+connections:
+  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
+components:
+  - { id: svc, project: grp/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    verify_on_failure: rollback
+    executor: { kind: compose-over-ssh, connection: h, project_dir: /o }
+`
+	_, err := Load(writeCfg(t, cfg))
+	require.ErrorContains(t, err, "requires at least one verify probe")
+}

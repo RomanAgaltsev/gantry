@@ -78,11 +78,18 @@ func (c Component) IsForgeRelease() bool { return c.Source.Forge == "release" }
 
 // Environment is one deploy target environment.
 type Environment struct {
-	Name     string         `yaml:"name"`
-	Source   Source         `yaml:"source"`
-	PinFile  string         `yaml:"pin_file"`
-	Executor ExecutorConfig `yaml:"executor"`
-	Verify   []VerifyProbe  `yaml:"verify"`
+	Name            string         `yaml:"name"`
+	Source          Source         `yaml:"source"`
+	PinFile         string         `yaml:"pin_file"`
+	Executor        ExecutorConfig `yaml:"executor"`
+	Verify          []VerifyProbe  `yaml:"verify"`
+	VerifyOnFailure string         `yaml:"verify_on_failure"` // "" (hold) | "hold" | "rollback"
+}
+
+// RollbackOnVerifyFailure reports whether a failed post-deploy verify should auto-roll-back
+// this environment to its last known-good pin set. Default (unset/"hold") holds the failure.
+func (e Environment) RollbackOnVerifyFailure() bool {
+	return e.VerifyOnFailure == "rollback"
 }
 
 // Source declares how an environment's pins are computed.
@@ -227,6 +234,7 @@ func (c *Config) validateComponents() error {
 	return nil
 }
 
+//nolint:gocognit // -
 func (c *Config) validateEnvironments() error {
 	for _, env := range c.Environments {
 		if env.Source.Track == "" && env.Source.PromoteFrom == "" {
@@ -254,6 +262,9 @@ func (c *Config) validateEnvironments() error {
 			return fmt.Errorf("environment %q: connection %q requires an ssh block", env.Name, env.Executor.Connection)
 		}
 		if err := validateVerifyProbes(env); err != nil {
+			return err
+		}
+		if err := validateVerifyOnFailure(env); err != nil {
 			return err
 		}
 	}
@@ -284,6 +295,18 @@ func validateVerifyProbes(env Environment) error {
 		default:
 			return fmt.Errorf("environment %q: unsupported verify kind %q (want http|compose-ps|command)", env.Name, p.Kind)
 		}
+	}
+	return nil
+}
+
+func validateVerifyOnFailure(env Environment) error {
+	switch env.VerifyOnFailure {
+	case "", "hold", "rollback":
+	default:
+		return fmt.Errorf("environment %q: unsupported verify_on_failure %q (want hold|rollback)", env.Name, env.VerifyOnFailure)
+	}
+	if env.VerifyOnFailure == "rollback" && len(env.Verify) == 0 {
+		return fmt.Errorf("environment %q: verify_on_failure: rollback requires at least one verify probe", env.Name)
 	}
 	return nil
 }

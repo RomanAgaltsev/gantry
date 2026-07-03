@@ -24,7 +24,9 @@ func newPromoteCmd() *cobra.Command {
 			}
 			res, err := engine.Promote(cmd.Context(), d.cfg, fromEnv, toEnv, sha, d.exec, d.verify, d.store, d.ledger, engine.PromoteOptions{DryRun: dryRun})
 			if err != nil {
-				if hint := deployFailureHint(toEnv, res.Committed); hint != "" {
+				if note := autoRollbackNote(toEnv, res.RolledBackTo); note != "" {
+					cmd.PrintErrln(note)
+				} else if hint := deployFailureHint(toEnv, res.Committed); hint != "" {
 					cmd.PrintErrln(hint)
 				}
 				return err

@@ -339,16 +339,18 @@ func TestDeployAndRecord_VerifyMatrix(t *testing.T) {
 
 	t.Run("deploy ok, verify pass -> ok/true", func(t *testing.T) {
 		_, led := base()
-		err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, fakeVerifier{nil}, led)
+		vfd, err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, fakeVerifier{nil}, led)
 		require.NoError(t, err)
+		require.False(t, vfd)
 		require.Equal(t, "ok", led.entries[0].Result)
 		require.Equal(t, "true", led.entries[0].Healthy)
 	})
 
 	t.Run("deploy ok, verify fail -> failed/false + error", func(t *testing.T) {
 		_, led := base()
-		err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, fakeVerifier{errors.New("503")}, led)
+		vfd, err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, fakeVerifier{errors.New("503")}, led)
 		require.Error(t, err)
+		require.True(t, vfd) // the verify step failed
 		require.Contains(t, err.Error(), "verify")
 		require.Equal(t, "failed", led.entries[0].Result)
 		require.Equal(t, "false", led.entries[0].Healthy)
@@ -356,16 +358,17 @@ func TestDeployAndRecord_VerifyMatrix(t *testing.T) {
 
 	t.Run("no verifier -> ok/unknown (A2 behavior preserved)", func(t *testing.T) {
 		_, led := base()
-		err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, nil, led)
+		vfd, err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, nil, led)
 		require.NoError(t, err)
-		require.Equal(t, "ok", led.entries[0].Result)
+		require.False(t, vfd)
 		require.Equal(t, "unknown", led.entries[0].Healthy)
 	})
 
 	t.Run("deploy fail -> verify not run, failed/unknown", func(t *testing.T) {
 		_, led := base()
-		err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &failExec{}, fakeVerifier{errors.New("unused")}, led)
+		vfd, err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &failExec{}, fakeVerifier{errors.New("unused")}, led)
 		require.Error(t, err)
+		require.False(t, vfd) // a deploy failure is not a verify failure
 		require.Contains(t, err.Error(), "deploy")
 		require.Equal(t, "failed", led.entries[0].Result)
 		require.Equal(t, "unknown", led.entries[0].Healthy)
@@ -481,4 +484,104 @@ func TestRollback_BlueGreenFlipsBack(t *testing.T) {
 	require.True(t, res.Deployed)
 	require.Equal(t, "rollback", led.entries[len(led.entries)-1].By)
 	require.Equal(t, "unknown", led.entries[len(led.entries)-1].Healthy) // flip does not verify health
+}
+
+// seqVerifier returns errs[i] for call i, then nil. Lets a test fail the initial deploy's
+// verify but pass the auto-rollback's verify of the restored (known-good) set.
+type seqVerifier struct {
+	errs []error
+	i    int
+}
+
+func (v *seqVerifier) Verify(context.Context) error {
+	if v.i < len(v.errs) {
+		e := v.errs[v.i]
+		v.i++
+		return e
+	}
+	return nil
+}
+
+func rollbackCfgEng() *config.Config {
+	return &config.Config{Environments: []config.Environment{{
+		Name: "test", Source: config.Source{Track: "latest"}, PinFile: ".env.versions.test",
+		Verify:          []config.VerifyProbe{{Kind: "http", URL: "x"}},
+		VerifyOnFailure: "rollback",
+	}}}
+}
+
+func TestDeploy_AutoRollbackOnVerifyFailure(t *testing.T) {
+	store := &fakeStore{
+		cur:     pin.Set{"K": "img:v2"},
+		headSHA: "bad",
+		atSHA:   map[string]pin.Set{"good": {"K": "img:v1"}},
+	}
+	led := &fakeLedger{entries: []ledger.Entry{{Environment: "test", PinCommit: "good", Result: "ok"}}}
+	vf := &seqVerifier{errs: []error{errors.New("503")}} // bad deploy fails; restored set passes
+
+	res, err := Deploy(context.Background(), rollbackCfgEng(), "test", &fakeExec{}, vf, store, led)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "rolled back")
+	require.True(t, res.AutoRolledBack)
+	require.Equal(t, "good", res.RolledBackTo)
+	require.Equal(t, "failed", led.entries[1].Result) // the bad deploy
+	last := led.entries[len(led.entries)-1]
+	require.Equal(t, "ok", last.Result)
+	require.Equal(t, "auto-rollback", last.By)
+}
+
+func TestDeploy_HoldOnVerifyFailure(t *testing.T) {
+	c := &config.Config{Environments: []config.Environment{{
+		Name: "test", Source: config.Source{Track: "latest"}, PinFile: ".env.versions.test",
+		Verify: []config.VerifyProbe{{Kind: "http", URL: "x"}}, // default hold
+	}}}
+	store := &fakeStore{cur: pin.Set{"K": "img:v2"}, headSHA: "bad"}
+	led := &fakeLedger{}
+
+	res, err := Deploy(context.Background(), c, "test", &fakeExec{}, fakeVerifier{errors.New("503")}, store, led)
+	require.Error(t, err)
+	require.False(t, res.AutoRolledBack)
+	require.Len(t, led.entries, 1)
+	require.Equal(t, "failed", led.entries[0].Result)
+}
+
+func TestDeploy_AutoRollbackNoPriorGreen(t *testing.T) {
+	store := &fakeStore{cur: pin.Set{"K": "img:v2"}, headSHA: "bad"} // no prior green in ledger
+	led := &fakeLedger{}
+	vf := &seqVerifier{errs: []error{errors.New("503")}}
+
+	res, err := Deploy(context.Background(), rollbackCfgEng(), "test", &fakeExec{}, vf, store, led)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "auto-rollback")
+	require.False(t, res.AutoRolledBack)
+}
+
+func TestDeploy_DeployFailureIsNotAutoRolledBack(t *testing.T) {
+	store := &fakeStore{
+		cur: pin.Set{"K": "img:v2"}, headSHA: "bad",
+		atSHA: map[string]pin.Set{"good": {"K": "img:v1"}},
+	}
+	led := &fakeLedger{entries: []ledger.Entry{{Environment: "test", PinCommit: "good", Result: "ok"}}}
+
+	res, err := Deploy(context.Background(), rollbackCfgEng(), "test", &failExec{}, fakeVerifier{nil}, store, led)
+	require.Error(t, err)
+	require.False(t, res.AutoRolledBack) // deploy failure != verify failure
+	require.Equal(t, "failed", led.entries[len(led.entries)-1].Result)
+	require.NotEqual(t, "auto-rollback", led.entries[len(led.entries)-1].By)
+}
+
+func TestRollback_DoesNotAutoRollback(t *testing.T) {
+	// A manual rollback whose own verify fails must NOT trigger a second rollback.
+	store := &fakeStore{
+		cur: pin.Set{"K": "img:v2"}, headSHA: "bad",
+		atSHA: map[string]pin.Set{"good": {"K": "img:v1"}},
+	}
+	led := &fakeLedger{entries: []ledger.Entry{{Environment: "test", PinCommit: "good", Result: "ok"}}}
+	vf := fakeVerifier{errors.New("503")} // always fails
+
+	_, err := Rollback(context.Background(), rollbackCfgEng(), "test", &fakeExec{}, vf, store, led, RollbackOptions{})
+	require.Error(t, err)
+	for _, e := range led.entries {
+		require.NotEqual(t, "auto-rollback", e.By)
+	}
 }
