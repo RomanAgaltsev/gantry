@@ -25,7 +25,7 @@ daemon:
 | field | default | notes |
 | --- | --- | --- |
 | `interval` | `60s` | How often each track-mode environment is reconciled. Must be ≥ `1s`. Override once with `gantry serve --interval 30s`. |
-| `listen` | `:9713` | HTTP address `/healthz` is served on. |
+| `listen` | `:9713` | HTTP address `/healthz` and `/metrics` are served on. |
 | `doorbell` | disabled | Trigger a reconcile on a forge webhook instead of waiting for the next tick. This is a C3c feature and not yet active; setting it has no effect in C3a. |
 
 Notifications are configured with the existing top-level [`notifications:`](notification.md)
@@ -81,6 +81,39 @@ curl http://127.0.0.1:9713/healthz   # → ok
 HTTP server is given 5s to drain, and the lock is released. In-flight reconcile calls run to
 completion; a reconcile is never interrupted mid-deploy.
 
+## Metrics
+
+The same HTTP server exposes Prometheus metrics at `/metrics` (on `daemon.listen`, shared
+with `/healthz`):
+
+```bash
+curl http://127.0.0.1:9713/metrics
+```
+
+The daemon records every reconcile outcome through its `Observer`; the families are:
+
+| metric | type | labels | meaning |
+| --- | --- | --- | --- |
+| `gantry_reconcile_total` | counter | `env`, `result` | Reconcile passes by result: `deployed`, `failed`, or `nochange`. |
+| `gantry_reconcile_duration_seconds` | histogram | `env` | Wall-clock time of one reconcile. |
+| `gantry_deploys_total` | counter | `env` | Actual deploys performed (a reconcile with a real diff). |
+| `gantry_verify_failures_total` | counter | `env` | Post-deploy verify probes that failed. |
+| `gantry_rollbacks_total` | counter | `env`, `kind` | Rollbacks performed; `kind="auto"` is a verify-triggered auto-rollback. |
+| `gantry_drift_age_seconds` | gauge | `env` | Age (seconds) of the oldest drifted component, last observed. |
+| `gantry_build_info` | gauge | `version` | Constant `1`, carrying the gantry version label. |
+
+A scrape config for Prometheus (the job targets the daemon's listen port):
+
+```yaml
+scrape_configs:
+  - job_name: gantry
+    static_configs:
+      - targets: ["localhost:9713"]
+```
+
+`gantry_drift_age_seconds` reflects the last reconcile's finding for each environment; see
+[drift.md](drift.md) for the drift model.
+
 ## Running it under systemd
 
 Run `serve` as a service on the orchestrator host (the machine with the git repo and SSH
@@ -111,9 +144,6 @@ repo. Stop it with `systemctl stop gantry` (a `SIGTERM`).
 
 ## What is *not* here yet
 
-- **Metrics** (Prometheus) arrive in C3b. The reconcile loop already records outcomes
-  through an `Observer` seam (a no-op today); C3b swaps in a real implementation and
-  exposes `/metrics` on the same HTTP mux as `/healthz`.
 - **Doorbell** (forge-webhook-triggered reconcile) is C3c. The `Options.Doorbell` channel
   and the `daemon.doorbell` config block are placeholders; a nil doorbell means the loop is
   interval-only.
