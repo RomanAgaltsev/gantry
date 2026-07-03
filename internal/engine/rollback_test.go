@@ -11,7 +11,7 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/pin"
 )
 
-func rollbackCfg() *config.Config {
+func rollbackCfgRoll() *config.Config {
 	return &config.Config{Environments: []config.Environment{
 		{Name: "prod", Source: config.Source{PromoteFrom: "test"}, PinFile: ".env.versions.prod"},
 	}}
@@ -31,7 +31,7 @@ func TestRollback_RestoresLastGreen(t *testing.T) {
 		{Environment: "prod", PinCommit: "cur", Result: "failed"}, // current, failed
 	}}
 
-	res, err := Rollback(context.Background(), rollbackCfg(), "prod", ex, nil, store, led, RollbackOptions{})
+	res, err := Rollback(context.Background(), rollbackCfgRoll(), "prod", ex, nil, store, led, RollbackOptions{})
 	require.NoError(t, err)
 	require.Equal(t, "g1", res.ToSHA)
 	require.Equal(t, pin.Set{"SVC_IMAGE": "reg/svc:good"}, store.committed)
@@ -43,7 +43,7 @@ func TestRollback_RestoresLastGreen(t *testing.T) {
 
 func TestRollback_NoHistory(t *testing.T) {
 	store := &fakeStore{} // LatestCommit → ErrNoHistory
-	_, err := Rollback(context.Background(), rollbackCfg(), "prod", &fakeExec{}, nil, store, &fakeLedger{}, RollbackOptions{})
+	_, err := Rollback(context.Background(), rollbackCfgRoll(), "prod", &fakeExec{}, nil, store, &fakeLedger{}, RollbackOptions{})
 	require.ErrorContains(t, err, "no pin history")
 }
 
@@ -51,7 +51,7 @@ func TestRollback_NoHistory(t *testing.T) {
 func TestRollback_NoEarlierGreen(t *testing.T) {
 	store := &fakeStore{headSHA: "cur", atSHA: map[string]pin.Set{"cur": {"A": "x"}}}
 	led := &fakeLedger{entries: []ledger.Entry{{Environment: "prod", PinCommit: "cur", Result: "ok"}}}
-	_, err := Rollback(context.Background(), rollbackCfg(), "prod", &fakeExec{}, nil, store, led, RollbackOptions{})
+	_, err := Rollback(context.Background(), rollbackCfgRoll(), "prod", &fakeExec{}, nil, store, led, RollbackOptions{})
 	require.ErrorContains(t, err, "no earlier green")
 }
 
@@ -61,7 +61,7 @@ func TestRollback_EmptyTargetRefused(t *testing.T) {
 		{Environment: "prod", PinCommit: "g1", Result: "ok"},
 		{Environment: "prod", PinCommit: "cur", Result: "failed"},
 	}}
-	_, err := Rollback(context.Background(), rollbackCfg(), "prod", &fakeExec{}, nil, store, led, RollbackOptions{})
+	_, err := Rollback(context.Background(), rollbackCfgRoll(), "prod", &fakeExec{}, nil, store, led, RollbackOptions{})
 	require.ErrorContains(t, err, "empty")
 }
 
@@ -76,7 +76,7 @@ func TestRollback_DryRun(t *testing.T) {
 		{Environment: "prod", PinCommit: "g1", Result: "ok"},
 		{Environment: "prod", PinCommit: "cur", Result: "failed"},
 	}}
-	res, err := Rollback(context.Background(), rollbackCfg(), "prod", ex, nil, store, led, RollbackOptions{DryRun: true})
+	res, err := Rollback(context.Background(), rollbackCfgRoll(), "prod", ex, nil, store, led, RollbackOptions{DryRun: true})
 	require.NoError(t, err)
 	require.True(t, res.DryRun)
 	require.False(t, ex.called)
@@ -96,7 +96,7 @@ func TestRollback_NoChangeRedeploysWithoutEmptyCommit(t *testing.T) {
 		{Environment: "prod", PinCommit: "g1", Result: "ok"},
 		{Environment: "prod", PinCommit: "cur", Result: "ok"},
 	}}
-	res, err := Rollback(context.Background(), rollbackCfg(), "prod", ex, nil, store, led, RollbackOptions{})
+	res, err := Rollback(context.Background(), rollbackCfgRoll(), "prod", ex, nil, store, led, RollbackOptions{})
 	require.NoError(t, err)
 	require.Nil(t, store.committed)        // no empty commit
 	require.True(t, ex.called)             // but still redeployed

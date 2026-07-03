@@ -23,3 +23,12 @@ func promoteDAGWarning(toEnv, configuredFrom, actualFrom string) string {
 	return fmt.Sprintf("warning: %s.promote_from is %q, but promoting from %q",
 		toEnv, configuredFrom, actualFrom)
 }
+
+// autoRollbackNote returns the operator note for a command whose deploy failed verification
+// and was auto-rolled-back. Empty when no rollback occurred.
+func autoRollbackNote(env, rolledBackTo string) string {
+	if rolledBackTo == "" {
+		return ""
+	}
+	return fmt.Sprintf("verify failed for %s; rolled back to %.7s", env, rolledBackTo)
+}

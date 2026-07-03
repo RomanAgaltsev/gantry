@@ -39,9 +39,11 @@ type SyncOptions struct{ DryRun bool }
 
 // SyncResult reports what a Sync did.
 type SyncResult struct {
-	Changes   []pin.Change
-	Deployed  bool
-	Recovered bool // a previously committed-but-undeployed pin set was redeployed
+	Changes        []pin.Change
+	Deployed       bool
+	Recovered      bool   // a previously committed-but-undeployed pin set was redeployed
+	AutoRolledBack bool   // a failed verify triggered an automatic rollback
+	RolledBackTo   string // the pin commit SHA (file model) or slot (blue-green) reverted to
 }
 
 // Sync resolves each component's latest release into the environment's pin file
@@ -85,7 +87,7 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 
 	changes := pin.Diff(current, merged)
 	if len(changes) == 0 {
-		return ensureGreen(ctx, envName, env.PinFile, current, ex, vf, store, led, opts)
+		return ensureGreen(ctx, cfg, envName, env.PinFile, current, ex, vf, store, led, opts)
 	}
 	if opts.DryRun {
 		return SyncResult{Changes: changes}, nil
@@ -97,8 +99,9 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 	}
 	log.Info("pin written", "env", envName, "commit", sha, "changes", len(changes))
 
-	if err := deployAndRecord(ctx, envName, env.PinFile, merged, sha, "sync", ex, vf, led); err != nil {
-		return SyncResult{Changes: changes}, err
+	rolledBackTo, err := deployVerifyRecover(ctx, cfg, envName, env.PinFile, merged, sha, "sync", ex, vf, store, led)
+	if err != nil {
+		return SyncResult{Changes: changes, AutoRolledBack: rolledBackTo != "", RolledBackTo: rolledBackTo}, err
 	}
 	return SyncResult{Changes: changes, Deployed: true}, nil
 }
@@ -106,7 +109,7 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 // ensureGreen redeploys the current pins when the latest pin commit lacks a green
 // ledger entry; otherwise it is a no-op. This makes a deploy that failed after its
 // pin commit self-heal on the next Sync.
-func ensureGreen(ctx context.Context, envName, pinFile string, current pin.Set, ex executor.Executor, vf verify.Verifier, store PinStore, led ledger.Ledger, opts SyncOptions) (SyncResult, error) {
+func ensureGreen(ctx context.Context, cfg *config.Config, envName, pinFile string, current pin.Set, ex executor.Executor, vf verify.Verifier, store PinStore, led ledger.Ledger, opts SyncOptions) (SyncResult, error) {
 	sha, err := store.LatestCommit(pinFile)
 	if errors.Is(err, ErrNoHistory) {
 		return SyncResult{}, nil // nothing was ever committed; nothing to ensure
@@ -124,8 +127,9 @@ func ensureGreen(ctx context.Context, envName, pinFile string, current pin.Set, 
 	if opts.DryRun {
 		return SyncResult{Recovered: true}, nil
 	}
-	if err := deployAndRecord(ctx, envName, pinFile, current, sha, "sync", ex, vf, led); err != nil {
-		return SyncResult{Recovered: true}, err
+	rolledBackTo, err := deployVerifyRecover(ctx, cfg, envName, pinFile, current, sha, "sync", ex, vf, store, led)
+	if err != nil {
+		return SyncResult{Recovered: true, AutoRolledBack: rolledBackTo != "", RolledBackTo: rolledBackTo}, err
 	}
 	return SyncResult{Deployed: true, Recovered: true}, nil
 }
@@ -141,8 +145,10 @@ func commitMessage(env string, changes []pin.Change) string {
 
 // DeployResult reports what a Deploy did.
 type DeployResult struct {
-	Pins     pin.Set
-	Deployed bool
+	Pins           pin.Set
+	Deployed       bool
+	AutoRolledBack bool   // a failed verify triggered an automatic rollback
+	RolledBackTo   string // the pin commit SHA (file model) or slot (blue-green) reverted to
 }
 
 // Deploy reconciles the running stack of an environment to its current committed pin
@@ -164,8 +170,9 @@ func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor
 	if err != nil {
 		return DeployResult{}, err
 	}
-	if err := deployAndRecord(ctx, envName, env.PinFile, pins, sha, "deploy", ex, vf, led); err != nil {
-		return DeployResult{}, err
+	rolledBackTo, err := deployVerifyRecover(ctx, cfg, envName, env.PinFile, pins, sha, "deploy", ex, vf, store, led)
+	if err != nil {
+		return DeployResult{AutoRolledBack: rolledBackTo != "", RolledBackTo: rolledBackTo}, err
 	}
 	return DeployResult{Pins: pins, Deployed: true}, nil
 }
@@ -175,9 +182,9 @@ func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor
 // records healthy "true"; a failing one records result "failed", healthy "false", and is
 // returned. With vf nil, healthy stays "unknown" (A2 behavior). A failed record is joined
 // in so the self-heal signal the next Sync reads is never lost.
-func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha, by string, ex executor.Executor, vf verify.Verifier, led ledger.Ledger) error {
+func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha, by string, ex executor.Executor, vf verify.Verifier, led ledger.Ledger) (verifyFailed bool, err error) {
 	if ex == nil {
-		return fmt.Errorf("no executor configured for environment %q", env)
+		return false, fmt.Errorf("no executor configured for environment %q", env)
 	}
 	_, deployErr := ex.Deploy(ctx, executor.Plan{Env: env, PinFile: pinFile, Pins: pins, Commit: sha})
 
@@ -206,18 +213,45 @@ func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha
 		By:          by,
 	})
 
+	// verifyFailed is true only when the deploy succeeded but the verify step failed.
+	verifyFailed = deployErr == nil && verifyErr != nil
+
 	actErr, verb := deployErr, "deploy"
 	if actErr == nil && verifyErr != nil {
 		actErr, verb = verifyErr, "verify"
 	}
 	if actErr != nil {
 		if recErr != nil {
-			return errors.Join(fmt.Errorf("%s %q: %w", verb, env, actErr),
+			return verifyFailed, errors.Join(fmt.Errorf("%s %q: %w", verb, env, actErr),
 				fmt.Errorf("record outcome: %w", recErr))
 		}
-		return fmt.Errorf("%s %q: %w", verb, env, actErr)
+		return verifyFailed, fmt.Errorf("%s %q: %w", verb, env, actErr)
 	}
-	return recErr
+	return false, recErr
+}
+
+// deployVerifyRecover deploys pins and records the outcome; when the failure was a failed
+// verify (not a failed deploy) and the environment opted into rollback, it auto-rolls-back via
+// engine.rollback (stamped by="auto-rollback"). It returns the reverted-to SHA/slot ("" when no
+// rollback happened) and the still-non-nil error describing the original failure.
+func deployVerifyRecover(ctx context.Context, cfg *config.Config, envName, pinFile string, pins pin.Set, sha, by string, ex executor.Executor, vf verify.Verifier, store PinStore, led ledger.Ledger) (rolledBackTo string, err error) {
+	verifyFailed, err := deployAndRecord(ctx, envName, pinFile, pins, sha, by, ex, vf, led)
+	if err == nil {
+		return "", nil
+	}
+	env, ok := cfg.Environment(envName)
+	if !verifyFailed || !ok || !env.RollbackOnVerifyFailure() {
+		return "", err // hold: surface the failure unchanged
+	}
+	rb, rbErr := rollback(ctx, cfg, envName, ex, vf, store, led, RollbackOptions{}, "auto-rollback")
+	if rbErr != nil {
+		return "", errors.Join(err, fmt.Errorf("auto-rollback: %w", rbErr))
+	}
+	target := rb.ToSHA
+	if target == "" {
+		target = rb.Slot
+	}
+	return target, fmt.Errorf("verify failed, rolled back: %w", err)
 }
 
 // pinsEqual reports whether two pin sets hold exactly the same keys and values.
@@ -245,11 +279,13 @@ type PromoteOptions struct{ DryRun bool }
 
 // PromoteResult reports what a Promote did.
 type PromoteResult struct {
-	FromSHA   string  // the source commit snapshotted
-	Pins      pin.Set // the promoted pin set
-	Committed string  // the new commit on the target pin file
-	Deployed  bool
-	DryRun    bool
+	FromSHA        string  // the source commit snapshotted
+	Pins           pin.Set // the promoted pin set
+	Committed      string  // the new commit on the target pin file
+	Deployed       bool
+	DryRun         bool
+	AutoRolledBack bool   // a failed verify triggered an automatic rollback
+	RolledBackTo   string // the pin commit SHA (file model) or slot (blue-green) reverted to
 }
 
 // Promote copies fromEnv's pin file as of sha into toEnv's pin file and deploys it.
@@ -316,8 +352,9 @@ func Promote(ctx context.Context, cfg *config.Config, fromEnv, toEnv, sha string
 	if err != nil {
 		return PromoteResult{}, err
 	}
-	if err := deployAndRecord(ctx, toEnv, to.PinFile, pins, newSHA, "promote", ex, vf, led); err != nil {
-		return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA}, err
+	rolledBackTo, err := deployVerifyRecover(ctx, cfg, toEnv, to.PinFile, pins, newSHA, "promote", ex, vf, store, led)
+	if err != nil {
+		return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA, AutoRolledBack: rolledBackTo != "", RolledBackTo: rolledBackTo}, err
 	}
 	return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA, Deployed: true}, nil
 }
@@ -349,12 +386,16 @@ type RollbackResult struct {
 // ledger knows failed, and repeated rollbacks walk backward through good states instead of
 // oscillating onto the bad one. Immutable image tags keep the previous images addressable.
 func Rollback(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, vf verify.Verifier, store PinStore, led ledger.Ledger, opts RollbackOptions) (RollbackResult, error) {
+	return rollback(ctx, cfg, envName, ex, vf, store, led, opts, "rollback")
+}
+
+func rollback(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, vf verify.Verifier, store PinStore, led ledger.Ledger, opts RollbackOptions, by string) (RollbackResult, error) {
 	env, ok := cfg.Environment(envName)
 	if !ok {
 		return RollbackResult{}, fmt.Errorf("environment %q not found", envName)
 	}
 	if se, ok := ex.(executor.SlotExecutor); ok {
-		return slotRollback(ctx, envName, env.PinFile, se, store, led, opts)
+		return slotRollback(ctx, envName, env.PinFile, se, store, led, opts, by)
 	}
 	last, err := store.LatestCommit(env.PinFile)
 	if errors.Is(err, ErrNoHistory) {
@@ -393,7 +434,7 @@ func Rollback(ctx context.Context, cfg *config.Config, envName string, ex execut
 	if err != nil {
 		return RollbackResult{ToSHA: target, Pins: pins}, err
 	}
-	if err := deployAndRecord(ctx, envName, env.PinFile, pins, newSHA, "rollback", ex, vf, led); err != nil {
+	if _, err := deployAndRecord(ctx, envName, env.PinFile, pins, newSHA, by, ex, vf, led); err != nil {
 		return RollbackResult{ToSHA: target, Pins: pins, Committed: newSHA}, err
 	}
 	return RollbackResult{ToSHA: target, Pins: pins, Committed: newSHA, Deployed: true}, nil
@@ -401,7 +442,7 @@ func Rollback(ctx context.Context, cfg *config.Config, envName string, ex execut
 
 // slotRollback rolls a blue-green environment back by flipping the pointer to the other
 // (previously-live) slot, which still runs the prior version.
-func slotRollback(ctx context.Context, envName, pinFile string, se executor.SlotExecutor, store PinStore, led ledger.Ledger, opts RollbackOptions) (RollbackResult, error) {
+func slotRollback(ctx context.Context, envName, pinFile string, se executor.SlotExecutor, store PinStore, led ledger.Ledger, opts RollbackOptions, by string) (RollbackResult, error) {
 	live, err := se.LiveSlot(ctx)
 	if err != nil {
 		return RollbackResult{}, err
@@ -427,7 +468,7 @@ func slotRollback(ctx context.Context, envName, pinFile string, se executor.Slot
 		Result:      "ok",
 		Healthy:     "unknown", // a pointer flip does not verify service health
 		DeployedAt:  time.Now(),
-		By:          "rollback",
+		By:          by,
 	}
 	if err := led.Record(rec); err != nil {
 		return RollbackResult{Slot: target, Deployed: true}, err
