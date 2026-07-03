@@ -30,22 +30,25 @@ func (v CommandVerifier) Verify(ctx context.Context) error {
 }
 
 // ComposePSVerifier runs `docker compose … ps --format json` on the host and fails if any
-// service is not running, or (when it declares a healthcheck) not healthy.
+// service is not running, or (when it declares a healthcheck) not healthy. The target compose
+// project is resolved at verify time via Target, so a blue-green probe checks the idle slot.
 type ComposePSVerifier struct {
-	Runner       Runner
-	ProjectDir   string
-	ComposeFiles []string
-	EnvFile      string
+	Runner Runner
+	Target func(ctx context.Context) (ComposeTarget, error)
 }
 
 // Verify queries compose service status and asserts every service is up and healthy.
 func (v ComposePSVerifier) Verify(ctx context.Context) error {
+	target, err := v.Target(ctx)
+	if err != nil {
+		return fmt.Errorf("resolve compose target: %w", err)
+	}
 	var files strings.Builder
-	for _, f := range v.ComposeFiles {
+	for _, f := range target.ComposeFiles {
 		fmt.Fprintf(&files, " -f %s", shellQuote(f))
 	}
 	cmd := fmt.Sprintf("cd %s && docker compose%s --env-file %s ps --format json",
-		shellQuote(v.ProjectDir), files.String(), shellQuote(v.EnvFile))
+		shellQuote(target.ProjectDir), files.String(), shellQuote(target.EnvFile))
 	out, err := v.Runner.Run(ctx, cmd, nil)
 	if err != nil {
 		return fmt.Errorf("compose ps: %w", err)
