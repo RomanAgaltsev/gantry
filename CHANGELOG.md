@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.10.0](https://github.com/RomanAgaltsev/gantry/compare/v0.9.0...v0.10.0) (2026-07-03)
+
+
+### Features
+
+* **cli:** dispatch notifications for deploy/promote/rollback/drift ([c00b19b](https://github.com/RomanAgaltsev/gantry/commit/c00b19b4e38e79072938f2a18f96bd9f8fc993ca))
+* **cli:** map engine results to notification events ([6f7701b](https://github.com/RomanAgaltsev/gantry/commit/6f7701b65c3f6f663338578417feafdcdfbab4d3))
+* **config:** add notifications block (webhook|email) with validation ([feb8ffb](https://github.com/RomanAgaltsev/gantry/commit/feb8ffbd5ecdd88b758addcc747a80d62a3ab1ad))
+* **engine:** expose VerifyFailed on deploy/sync/promote results ([e4018ce](https://github.com/RomanAgaltsev/gantry/commit/e4018cea53570482a3810c6998dc12d3037cfdcd))
+* notifications ([a9d751e](https://github.com/RomanAgaltsev/gantry/commit/a9d751edb8fe6fbf7add74ecd0fe9ac324b5ce4d))
+* **notify:** add Event, Notifier, and best-effort Dispatcher ([b36a066](https://github.com/RomanAgaltsev/gantry/commit/b36a06609e05f5a9845b89f5281fcabcc2788968))
+* **notify:** add SMTP email backend ([8964e1c](https://github.com/RomanAgaltsev/gantry/commit/8964e1cf8509c7087f4fb1c52259840b292ff79b))
+* **notify:** add Telegram-compatible webhook backend ([04bfdf9](https://github.com/RomanAgaltsev/gantry/commit/04bfdf995f4ea52652cdcff10d0d7cc7e071be05))
+
 ## [0.9.0](https://github.com/RomanAgaltsev/gantry/compare/v0.8.1...v0.9.0) (2026-07-03)
 
 
