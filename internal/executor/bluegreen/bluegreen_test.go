@@ -103,3 +103,17 @@ func TestSwitchTo(t *testing.T) {
 func TestSwitchTo_UnknownSlot(t *testing.T) {
 	require.Error(t, bgExec(&fakeRunner{}).SwitchTo(context.Background(), "red"))
 }
+
+func TestComposeTarget_ResolvesIdleSlot(t *testing.T) {
+	fr := &fakeRunner{readlink: "/etc/nginx/green.conf"} // green live -> idle blue
+	tgt, err := bgExec(fr).ComposeTarget(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "/opt/blue", tgt.ProjectDir) // the idle slot's project
+	require.Equal(t, ".env", tgt.EnvFile)
+}
+
+func TestComposeTarget_PropagatesPointerError(t *testing.T) {
+	fr := &fakeRunner{readlinkErr: context.DeadlineExceeded}
+	_, err := bgExec(fr).ComposeTarget(context.Background())
+	require.Error(t, err)
+}
