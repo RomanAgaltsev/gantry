@@ -2,13 +2,15 @@ package cli
 
 import (
 	"github.com/RomanAgaltsev/gantry/internal/config"
+	"github.com/RomanAgaltsev/gantry/internal/executor"
 	"github.com/RomanAgaltsev/gantry/internal/verify"
 )
 
-// buildVerifiers turns an environment's verify config into a composite verifier, using
-// runner for host-side probes (compose-ps, command). It returns nil when there are no
-// probes, which the engine treats as "no verification" (healthy stays "unknown").
-func buildVerifiers(probes []config.VerifyProbe, runner verify.Runner, ex config.ExecutorConfig) verify.Verifier {
+// buildVerifiers turns an environment's verify config into a composite verifier, using runner
+// for host-side probes. compose-ps is wired to the executor's kind-aware ComposeTarget, so it
+// checks the right project (current/.env for symlink-release, the idle slot for blue-green). It
+// returns nil when there are no probes.
+func buildVerifiers(probes []config.VerifyProbe, runner verify.Runner, exec executor.Executor) verify.Verifier {
 	if len(probes) == 0 {
 		return nil
 	}
@@ -20,12 +22,9 @@ func buildVerifiers(probes []config.VerifyProbe, runner verify.Runner, ex config
 		case "command":
 			comp = append(comp, verify.CommandVerifier{Runner: runner, Command: p.Command})
 		case "compose-ps":
-			comp = append(comp, verify.ComposePSVerifier{
-				Runner:       runner,
-				ProjectDir:   ex.ProjectDir,
-				ComposeFiles: ex.ComposeFiles,
-				EnvFile:      ex.EnvFile,
-			})
+			if cv, ok := exec.(verify.ComposeVerifiable); ok {
+				comp = append(comp, verify.ComposePSVerifier{Runner: runner, Target: cv.ComposeTarget})
+			}
 		}
 	}
 	return comp
