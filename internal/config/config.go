@@ -2,9 +2,11 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -20,6 +22,7 @@ type Config struct {
 	Drift         DriftConfig           `yaml:"drift"`
 	Promote       PromoteConfig         `yaml:"promote"`
 	Notifications []NotifyChannel       `yaml:"notifications"`
+	Daemon        DaemonConfig          `yaml:"daemon"`
 }
 
 // PromoteConfig tunes the promotion gate. Optional; require_healthy defaults false so
@@ -159,6 +162,21 @@ type ComponentSource struct {
 	Pin   string `yaml:"pin"`
 }
 
+// DaemonConfig configures `gantry serve`. Optional; every field defaults so an existing
+// config runs the daemon with sane values.
+type DaemonConfig struct {
+	Interval Duration `yaml:"interval"` // reconcile period; default 60s
+	Listen   string   `yaml:"listen"`   // HTTP bind address; default ":9713"
+	Doorbell Doorbell `yaml:"doorbell"` // C3c; disabled by default
+}
+
+// Doorbell configures the optional forge-webhook trigger (C3c).
+type Doorbell struct {
+	Enabled bool      `yaml:"enabled"`
+	Path    string    `yaml:"path"`   // default "/hooks/forge"
+	Secret  SecretRef `yaml:"secret"` // required when Enabled; authenticates the webhook
+}
+
 // Environment returns the named environment.
 func (c *Config) Environment(name string) (*Environment, bool) {
 	for i := range c.Environments {
@@ -208,6 +226,8 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
+	c.defaultDaemon()
+
 	if err := c.validate(); err != nil {
 		return nil, err
 	}
@@ -226,7 +246,10 @@ func (c *Config) validate() error {
 	if err := c.validateEnvironments(); err != nil {
 		return err
 	}
-	return c.validateNotifications()
+	if err := c.validateNotifications(); err != nil {
+		return err
+	}
+	return c.validateDaemon()
 }
 
 func (c *Config) validateComponents() error {
@@ -370,6 +393,33 @@ func (c *Config) validateNotifications() error {
 				return fmt.Errorf("notifications[%d]: unknown event %q (want deployed|promoted|rolled_back|verify_failed|drift_alarm)", i, ev)
 			}
 		}
+	}
+	return nil
+}
+
+// defaultDaemon fills in the optional daemon block's defaults so an existing config runs the
+// daemon with sane values.
+func (c *Config) defaultDaemon() {
+	if c.Daemon.Interval.Duration() == 0 {
+		c.Daemon.Interval = DurationOf(60 * time.Second)
+	}
+	if c.Daemon.Listen == "" {
+		c.Daemon.Listen = ":9713"
+	}
+	if c.Daemon.Doorbell.Path == "" {
+		c.Daemon.Doorbell.Path = "/hooks/forge"
+	}
+}
+
+func (c *Config) validateDaemon() error {
+	if c.Daemon.Interval.Duration() < time.Second {
+		return errors.New("daemon.interval must be at least 1s")
+	}
+	if c.Daemon.Listen == "" {
+		return errors.New("daemon.listen must not be empty")
+	}
+	if c.Daemon.Doorbell.Enabled && strings.TrimSpace(c.Daemon.Doorbell.Secret.Raw) == "" {
+		return errors.New("daemon.doorbell.enabled requires a doorbell.secret")
 	}
 	return nil
 }
