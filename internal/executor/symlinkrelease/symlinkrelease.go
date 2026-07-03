@@ -12,7 +12,10 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/executor"
 	"github.com/RomanAgaltsev/gantry/internal/executor/composessh"
 	"github.com/RomanAgaltsev/gantry/internal/pin"
+	"github.com/RomanAgaltsev/gantry/internal/verify"
 )
+
+var _ verify.ComposeVerifiable = (*Executor)(nil)
 
 const (
 	releasesDir  = "releases"
@@ -68,4 +71,9 @@ func (e *Executor) Deploy(ctx context.Context, p executor.Plan) (executor.Result
 		return executor.Result{}, err
 	}
 	return executor.Result{Changed: true, Detail: "symlink-release " + p.Commit}, nil
+}
+
+// ComposeTarget verifies the active release, which runs compose from current/.env.
+func (e *Executor) ComposeTarget(context.Context) (verify.ComposeTarget, error) {
+	return verify.ComposeTarget{ProjectDir: e.ProjectDir, ComposeFiles: e.ComposeFiles, EnvFile: envInRelease}, nil
 }

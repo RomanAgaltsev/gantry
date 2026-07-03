@@ -139,3 +139,11 @@ func TestDeploy_LogsInOnlyMatchingRegistriesBeforePull(t *testing.T) {
 		require.NotContains(t, c, "ghcr.io")
 	}
 }
+
+func TestComposeTarget(t *testing.T) {
+	e := &Executor{ProjectDir: "/opt/demo", ComposeFiles: []string{"compose.yaml"}, EnvFile: ".env.versions.test"}
+	tgt, err := e.ComposeTarget(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "/opt/demo", tgt.ProjectDir)
+	require.Equal(t, ".env.versions.test", tgt.EnvFile)
+}
