@@ -89,9 +89,13 @@ gantry serve --interval 15s
 - **Metrics:** scrape `/metrics` on the same port. Watch `gantry_drift_age_seconds` (a
   component lagging its release past your threshold) and `gantry_verify_failures_total`
   rising (reconciles that deployed but failed verification).
+- **Doorbell:** point a forge webhook at `http://<host>:9713/hooks/forge` with the shared
+  secret in `X-Gantry-Token` (or `X-Gitlab-Token`) to reconcile immediately on a release
+  instead of waiting for the next tick. Enable it under `daemon.doorbell`. Test by hand:
+  `curl -XPOST -H "X-Gantry-Token: …" host:9713/hooks/forge` → `202`.
 
-See [daemon.md](daemon.md) for config, the metrics families, the systemd unit, and what
-C3c adds.
+See [daemon.md](daemon.md) for config, the metrics families, the doorbell, and the systemd
+unit.
 
 ## A deploy failed — now what?
 
