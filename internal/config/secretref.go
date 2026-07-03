@@ -1,9 +1,12 @@
 package config
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -22,11 +25,38 @@ func (s *SecretRef) UnmarshalYAML(value *yaml.Node) error {
 type SecretResolver struct {
 	LookupEnv func(string) (string, bool)
 	ReadFile  func(string) ([]byte, error)
+	// Runner runs a host command (sops/vault/cmd) under ctx, with env appended to the child's
+	// environment. It returns trimmed-able stdout; a failed command surfaces its stderr.
+	Runner func(ctx context.Context, env []string, name string, args ...string) ([]byte, error)
+	// Vault holds the resolved ambient Vault address/token used by ${vault:…} (Task 5).
+	Vault VaultDefaults
+}
+
+// VaultDefaults are the resolved ambient Vault address and token used by ${vault:…}. Both
+// empty means no Vault defaults are configured; ${vault:…} then uses the vault CLI's own
+// ambient env (VAULT_ADDR/VAULT_TOKEN).
+type VaultDefaults struct {
+	Address string
+	Token   string
 }
 
 // DefaultResolver resolves against the real OS environment and filesystem.
 func DefaultResolver() SecretResolver {
-	return SecretResolver{LookupEnv: os.LookupEnv, ReadFile: os.ReadFile}
+	return SecretResolver{LookupEnv: os.LookupEnv, ReadFile: os.ReadFile, Runner: execRunner}
+}
+
+// execRunner runs name with args under ctx, env appended to os.Environ, capturing stdout and
+// surfacing stderr on failure.
+func execRunner(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stderr = &stderr
+	cmd.Env = append(os.Environ(), env...)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("run %s: %w: %s", name, err, strings.TrimSpace(stderr.String()))
+	}
+	return out, nil
 }
 
 // SchemeFunc resolves the arg of a ${scheme:arg} ref. res is passed so a backend can compose

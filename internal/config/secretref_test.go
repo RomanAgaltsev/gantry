@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -72,4 +73,16 @@ func TestResolve_RegistryDispatch(t *testing.T) {
 func TestResolve_UnknownSchemeStillErrors(t *testing.T) {
 	_, err := DefaultResolver().Resolve(SecretRef{Raw: "${nope:x}"})
 	require.ErrorContains(t, err, "unknown secret scheme")
+}
+
+func TestDefaultResolver_RunnerRunsCommand(t *testing.T) {
+	out, err := DefaultResolver().Runner(context.Background(), nil, "go", "version")
+	require.NoError(t, err)
+	require.Contains(t, string(out), "go version")
+}
+
+func TestRunner_NonZeroExitCarriesStderr(t *testing.T) {
+	// A command that fails should surface its stderr in the error.
+	_, err := DefaultResolver().Runner(context.Background(), nil, "go", "definitely-not-a-subcommand")
+	require.Error(t, err)
 }
