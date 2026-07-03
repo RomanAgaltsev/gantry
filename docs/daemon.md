@@ -26,7 +26,7 @@ daemon:
 | --- | --- | --- |
 | `interval` | `60s` | How often each track-mode environment is reconciled. Must be ≥ `1s`. Override once with `gantry serve --interval 30s`. |
 | `listen` | `:9713` | HTTP address `/healthz` and `/metrics` are served on. |
-| `doorbell` | disabled | Trigger a reconcile on a forge webhook instead of waiting for the next tick. This is a C3c feature and not yet active; setting it has no effect in C3a. |
+| `doorbell` | disabled | Trigger an immediate reconcile from a forge webhook instead of waiting for the next tick. See [Doorbell](#doorbell). |
 
 Notifications are configured with the existing top-level [`notifications:`](notification.md)
 block — `serve` dispatches the same events the CLI does (`deployed`, `rolled_back`,
@@ -142,8 +142,45 @@ WantedBy=multi-user.target
 `Restart=on-failure` covers a crash; `WorkingDirectory` (or `--config`) must point at the
 repo. Stop it with `systemctl stop gantry` (a `SIGTERM`).
 
+## Doorbell
+
+A forge webhook can trigger an immediate reconcile instead of waiting for `interval` to
+elapse. Enable it under `daemon.doorbell`:
+
+```yaml
+daemon:
+  doorbell:
+    enabled: true
+    path: /hooks/forge        # default; the URL the forge POSTs to
+    secret: ${env:GANTRY_DOORBELL_TOKEN}  # required when enabled; authenticates the webhook
+```
+
+The webhook **carries no version data** (C3-D2) — it only says "something changed, go look".
+An authenticated ring schedules the same reconcile the interval would run; it cannot cause a
+deploy directly. gantry authenticates the request with a shared secret sent in either the
+`X-Gantry-Token` or the `X-Gitlab-Token` header (constant-time compare). Bursts are
+debounced: the doorbell is a capacity-1 channel, so a flurry of webhooks collapses to a
+single pending reconcile.
+
+To wire it up in GitLab, add a webhook to the relevant project(s) pointing at gantry with the
+secret token set to the configured value:
+
+- **URL:** `http://<host>:9713/hooks/forge`
+- **Secret token:** the value `GANTRY_DOORBELL_TOKEN` resolves to
+- **Trigger:** `Release` events (a push/mirror will do)
+
+Test it by hand (expect `202 Accepted`):
+
+```bash
+curl -XPOST -H "X-Gantry-Token: $GANTRY_DOORBELL_TOKEN" http://host:9713/hooks/forge
+```
+
+The endpoint authenticates by shared secret, so in production it should sit behind TLS or an
+ingress that terminates TLS for the gantry port.
+
 ## What is *not* here yet
 
-- **Doorbell** (forge-webhook-triggered reconcile) is C3c. The `Options.Doorbell` channel
-  and the `daemon.doorbell` config block are placeholders; a nil doorbell means the loop is
-  interval-only.
+The C3 daemon slices (core loop, metrics, doorbell) are complete. GitHub HMAC signing
+(`X-Hub-Signature-256`) is a documented seam in the doorbell's authenticator rather than
+built today — the shared-secret header covers GitLab natively and any webhook that can set a
+header; add HMAC when a GitHub adopter needs it.
