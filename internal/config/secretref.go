@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -71,6 +72,14 @@ func (r SecretResolver) run(name string, args ...string) ([]byte, error) {
 	return r.Runner(ctx, nil, name, args...)
 }
 
+// runWithEnv runs name with args under a bounded context with env appended to the child env
+// (used by vault to pass VAULT_TOKEN off the process arg list).
+func (r SecretResolver) runWithEnv(env []string, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), runnerTimeout)
+	defer cancel()
+	return r.Runner(ctx, env, name, args...)
+}
+
 // resolveCmd runs a command and returns its trimmed stdout as the secret. The arg is split
 // on whitespace: "${cmd:prog a b}" runs prog with args [a b]. Commands needing shell quoting
 // should be wrapped in a script.
@@ -124,6 +133,43 @@ func walkDotted(doc map[string]any, path string) (string, error) {
 	return fmt.Sprintf("%v", cur), nil
 }
 
+// resolveVault reads a field from a Vault KV secret via the vault binary. Arg form:
+// "mount/path#field". Address/token come from the resolver's VaultDefaults; the token is
+// passed via the child env (VAULT_TOKEN) so it stays off the process arg list.
+func resolveVault(r SecretResolver, arg string) (string, error) {
+	path, field, ok := strings.Cut(arg, "#")
+	if !ok {
+		return "", fmt.Errorf("vault secret %q: want mount/path#field", arg)
+	}
+	args := []string{"kv", "get", "-format=json"}
+	if r.Vault.Address != "" {
+		args = append(args, "-address="+r.Vault.Address)
+	}
+	args = append(args, path)
+
+	env := []string{}
+	if r.Vault.Token != "" {
+		env = append(env, "VAULT_TOKEN="+r.Vault.Token)
+	}
+	out, err := r.runWithEnv(env, "vault", args...)
+	if err != nil {
+		return "", fmt.Errorf("vault kv get %q: %w", path, err)
+	}
+	var resp struct {
+		Data struct {
+			Data map[string]string `json:"data"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		return "", fmt.Errorf("vault %q: parse response: %w", path, err)
+	}
+	v, ok := resp.Data.Data[field]
+	if !ok {
+		return "", fmt.Errorf("vault %q: field %q not found", path, field)
+	}
+	return v, nil
+}
+
 // SchemeFunc resolves the arg of a ${scheme:arg} ref. res is passed so a backend can compose
 // other schemes (e.g. vault resolving its own token) and so tests can inject fakes.
 type SchemeFunc func(res SecretResolver, arg string) (string, error)
@@ -131,10 +177,11 @@ type SchemeFunc func(res SecretResolver, arg string) (string, error)
 // schemes maps a scheme name to its resolver. env/file are built in; cmd/sops/vault register
 // themselves in their own tasks. Register adds or overrides an entry (tests, future backends).
 var schemes = map[string]SchemeFunc{
-	"env":  resolveEnv,
-	"file": resolveFile,
-	"cmd":  resolveCmd,
-	"sops": resolveSOPS,
+	"env":   resolveEnv,
+	"file":  resolveFile,
+	"cmd":   resolveCmd,
+	"sops":  resolveSOPS,
+	"vault": resolveVault,
 }
 
 // Register adds or overrides a secret scheme. Intended for tests and future backends

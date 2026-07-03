@@ -48,6 +48,14 @@ func TestLoad_OK_AndDefaults(t *testing.T) {
 	require.Equal(t, "latest", env.Source.Track)
 }
 
+func TestLoad_VaultDefaults(t *testing.T) {
+	c, err := Load(writeCfg(t, goodCfg))
+	require.NoError(t, err)
+	// Vault address/token default to the standard env vars when the secrets.vault block is unset.
+	require.Equal(t, "${env:VAULT_ADDR}", c.Secrets.Vault.Address.Raw)
+	require.Equal(t, "${env:VAULT_TOKEN}", c.Secrets.Vault.Token.Raw)
+}
+
 func TestLoad_DanglingConnection(t *testing.T) {
 	bad := goodCfg + `
   - name: prod

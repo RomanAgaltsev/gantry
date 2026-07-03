@@ -136,3 +136,27 @@ func TestResolveSOPS_NoKeyReturnsWholeOutput(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "just-the-secret", got)
 }
+
+func TestResolveVault_FieldFromJSON(t *testing.T) {
+	r := DefaultResolver()
+	r.Vault = VaultDefaults{Address: "https://vault.example:8200", Token: "t0ken"}
+	r.Runner = func(_ context.Context, env []string, name string, args ...string) ([]byte, error) {
+		require.Equal(t, "vault", name)
+		require.Contains(t, args, "-address=https://vault.example:8200")
+		require.Contains(t, args, "secret/gantry")
+		require.Contains(t, env, "VAULT_TOKEN=t0ken") // token threaded via env, not args
+		return []byte(`{"data":{"data":{"forge_token":"gl-xyz"}}}`), nil
+	}
+	got, err := r.Resolve(SecretRef{Raw: "${vault:secret/gantry#forge_token}"})
+	require.NoError(t, err)
+	require.Equal(t, "gl-xyz", got)
+}
+
+func TestResolveVault_MissingFieldErrors(t *testing.T) {
+	r := DefaultResolver()
+	r.Runner = func(context.Context, []string, string, ...string) ([]byte, error) {
+		return []byte(`{"data":{"data":{"other":"x"}}}`), nil
+	}
+	_, err := r.Resolve(SecretRef{Raw: "${vault:secret/gantry#forge_token}"})
+	require.ErrorContains(t, err, "forge_token")
+}
