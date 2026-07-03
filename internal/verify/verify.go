@@ -21,3 +21,17 @@ func (c Composite) Verify(ctx context.Context) error {
 	}
 	return nil
 }
+
+// ComposeTarget describes where an executor runs `docker compose`, so a compose-ps probe can
+// health-check the project it actually deployed to.
+type ComposeTarget struct {
+	ProjectDir   string
+	ComposeFiles []string
+	EnvFile      string
+}
+
+// ComposeVerifiable is implemented by executors whose freshly-deployed compose project can be
+// verified with `docker compose ps`. blue-green resolves the idle slot dynamically.
+type ComposeVerifiable interface {
+	ComposeTarget(ctx context.Context) (ComposeTarget, error)
+}

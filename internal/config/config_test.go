@@ -265,25 +265,6 @@ environments:
 	}
 }
 
-func TestLoad_ComposePSRejectedForNonComposeExecutor(t *testing.T) {
-	const cfg = `
-forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
-connections:
-  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
-components:
-  - { id: svc, project: grp/svc, pin_key: SVC_IMAGE }
-environments:
-  - name: prod
-    source: { promote_from: prod }
-    pin_file: .env.versions.prod
-    verify:
-      - { kind: compose-ps }
-    executor: { kind: symlink-release, connection: h, project_dir: /opt/app, compose_files: [compose.yaml] }
-`
-	_, err := Load(writeCfg(t, cfg))
-	require.ErrorContains(t, err, "compose-ps verify is only supported for compose-over-ssh")
-}
-
 func TestLoad_SymlinkReleaseExecutor(t *testing.T) {
 	const cfg = `
 forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
@@ -507,4 +488,23 @@ notifications:
 		_, err := Load(writeCfg(t, base(block)))
 		require.Error(t, err, block)
 	}
+}
+
+func TestLoad_ComposePSAllowedOnSymlinkRelease(t *testing.T) {
+	const cfg = `
+forge: { kind: gitlab, base_url: https://x, token: "${env:T}" }
+connections:
+  h: { address: 10.0.0.1, ssh: { user: deploy, key: "${file:/k}" } }
+components:
+  - { id: svc, project: grp/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: prod
+    source: { promote_from: prod }
+    pin_file: .env.versions.prod
+    verify:
+      - { kind: compose-ps }
+    executor: { kind: symlink-release, connection: h, project_dir: /opt/app, compose_files: [compose.yaml] }
+`
+	_, err := Load(writeCfg(t, cfg))
+	require.NoError(t, err) // kind-aware ComposeTarget resolves the project at verify time
 }

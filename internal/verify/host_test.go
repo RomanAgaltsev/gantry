@@ -29,8 +29,14 @@ func TestCommandVerifier(t *testing.T) {
 	require.Error(t, CommandVerifier{Runner: bad, Command: "false"}.Verify(context.Background()))
 }
 
+func staticTarget(pd string, files []string, env string) func(context.Context) (ComposeTarget, error) {
+	return func(context.Context) (ComposeTarget, error) {
+		return ComposeTarget{ProjectDir: pd, ComposeFiles: files, EnvFile: env}, nil
+	}
+}
+
 func TestComposePSVerifier(t *testing.T) {
-	v := ComposePSVerifier{ProjectDir: "/opt/app", ComposeFiles: []string{"compose.yaml"}, EnvFile: ".env"}
+	v := ComposePSVerifier{Target: staticTarget("/opt/app", []string{"compose.yaml"}, ".env")}
 
 	t.Run("all running", func(t *testing.T) {
 		r := &fakeRunner{out: `{"Service":"api","State":"running","Health":"healthy"}` + "\n" +
@@ -39,6 +45,7 @@ func TestComposePSVerifier(t *testing.T) {
 		require.NoError(t, v.Verify(context.Background()))
 		require.Contains(t, r.gotCmd, "docker compose")
 		require.Contains(t, r.gotCmd, "ps --format json")
+		require.Contains(t, r.gotCmd, "/opt/app")
 	})
 
 	t.Run("array form", func(t *testing.T) {
@@ -67,4 +74,11 @@ func TestComposePSVerifier(t *testing.T) {
 		v.Runner = &fakeRunner{out: "not json"}
 		require.Error(t, v.Verify(context.Background()))
 	})
+}
+
+func TestComposePSVerifier_TargetError(t *testing.T) {
+	v := ComposePSVerifier{Runner: &fakeRunner{}, Target: func(context.Context) (ComposeTarget, error) {
+		return ComposeTarget{}, errors.New("no live slot")
+	}}
+	require.ErrorContains(t, v.Verify(context.Background()), "resolve compose target")
 }

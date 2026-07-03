@@ -307,15 +307,9 @@ func validateVerifyProbes(env Environment) error {
 				return fmt.Errorf("environment %q: command verify probe requires command", env.Name)
 			}
 		case "compose-ps":
-			// compose-ps reuses the environment's top-level executor compose settings
-			// (project_dir/compose_files/env_file). Those are only populated for the
-			// compose-over-ssh kind; symlink-release drives compose from current/.env and
-			// blue-green keeps its compose projects per slot, so a compose-ps probe there
-			// would run against an empty project dir. Reject it until per-kind verification
-			// is designed (B2b spec follow-up).
-			if env.Executor.Kind != "compose-over-ssh" {
-				return fmt.Errorf("environment %q: compose-ps verify is only supported for compose-over-ssh executors (kind is %q)", env.Name, env.Executor.Kind)
-			}
+			// No extra fields; the executor's kind-aware ComposeTarget resolves the compose
+			// project (current/.env for symlink-release, the idle slot for blue-green) at
+			// verify time.
 		default:
 			return fmt.Errorf("environment %q: unsupported verify kind %q (want http|compose-ps|command)", env.Name, p.Kind)
 		}

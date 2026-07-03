@@ -55,3 +55,11 @@ func TestDeploy_RequiresCommit(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "commit")
 }
+
+func TestComposeTarget(t *testing.T) {
+	e := &Executor{ProjectDir: "/opt/app", ComposeFiles: []string{"compose.yaml"}}
+	tgt, err := e.ComposeTarget(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "/opt/app", tgt.ProjectDir)
+	require.Equal(t, "current/.env", tgt.EnvFile) // compose runs from the active release
+}

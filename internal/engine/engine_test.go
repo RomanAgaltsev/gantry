@@ -450,7 +450,7 @@ func TestSwitch_GateAndFlip(t *testing.T) {
 	store := &fakeStore{headSHA: "h1"}
 	led := &fakeLedger{entries: []ledger.Entry{{Environment: "front", PinCommit: "h1", Result: "ok"}}}
 	se := &fakeSlotExec{live: "blue"} // live blue -> idle green
-	res, err := Switch(context.Background(), cfg, "front", se, store, led)
+	res, err := Switch(context.Background(), cfg, "front", se, nil, store, led)
 	require.NoError(t, err)
 	require.Equal(t, "green", se.switchedTo)
 	require.Equal(t, "blue", res.From)
@@ -462,12 +462,12 @@ func TestSwitch_GateRefusesUnstaged(t *testing.T) {
 	cfg := bgCfg()
 	store := &fakeStore{headSHA: "h1"}
 	led := &fakeLedger{} // no ok entry for h1
-	_, err := Switch(context.Background(), cfg, "front", &fakeSlotExec{live: "blue"}, store, led)
+	_, err := Switch(context.Background(), cfg, "front", &fakeSlotExec{live: "blue"}, nil, store, led)
 	require.Error(t, err)
 }
 
 func TestSwitch_NonSlotExecutor(t *testing.T) {
-	_, err := Switch(context.Background(), bgCfg(), "front", &fakeExec{}, &fakeStore{headSHA: "h1"}, &fakeLedger{})
+	_, err := Switch(context.Background(), bgCfg(), "front", &fakeExec{}, nil, &fakeStore{headSHA: "h1"}, &fakeLedger{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "blue-green")
 }
@@ -606,4 +606,46 @@ func TestDeploy_DeployFailureIsNotVerifyFailed(t *testing.T) {
 	res, err := Deploy(context.Background(), c, "test", &failExec{}, fakeVerifier{nil}, store, &fakeLedger{})
 	require.Error(t, err)
 	require.False(t, res.VerifyFailed) // an SSH/deploy failure is not a verify failure
+}
+
+func TestSwitch_RefusesWhenIdleVerifyFails(t *testing.T) {
+	cfg := bgCfg()
+	store := &fakeStore{headSHA: "h2"}
+	led := &fakeLedger{entries: []ledger.Entry{{Environment: "front", PinCommit: "h2", Result: "ok"}}}
+	se := &fakeSlotExec{live: "blue"}
+
+	_, err := Switch(context.Background(), cfg, "front", se, fakeVerifier{errors.New("503")}, store, led)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "verification")
+	require.Equal(t, "", se.switchedTo)                               // pointer NOT flipped
+	require.NotEqual(t, "switch", led.entries[len(led.entries)-1].By) // no switch record added
+}
+
+func TestSwitch_PassesWhenIdleVerifyOK(t *testing.T) {
+	cfg := bgCfg()
+	store := &fakeStore{headSHA: "h2"}
+	led := &fakeLedger{entries: []ledger.Entry{{Environment: "front", PinCommit: "h2", Result: "ok"}}}
+	se := &fakeSlotExec{live: "blue"}
+
+	res, err := Switch(context.Background(), cfg, "front", se, fakeVerifier{nil}, store, led)
+	require.NoError(t, err)
+	require.Equal(t, "green", res.To)
+	require.Equal(t, "green", se.switchedTo)
+}
+
+func TestDeploy_BlueGreenHoldsOnVerifyFail_NoFlip(t *testing.T) {
+	cfg := bgCfg()
+	cfg.Environments[0].Verify = []config.VerifyProbe{{Kind: "compose-ps"}}
+	cfg.Environments[0].VerifyOnFailure = "rollback" // must be a NO-OP for blue-green
+	store := &fakeStore{headSHA: "h2"}
+	led := &fakeLedger{}
+	se := &fakeSlotExec{live: "blue"}
+
+	res, err := Deploy(context.Background(), cfg, "front", se, fakeVerifier{errors.New("503")}, store, led)
+	require.Error(t, err)
+	require.False(t, res.AutoRolledBack) // no auto-rollback for a slot executor
+	require.Equal(t, "", se.switchedTo)  // pointer never flipped
+	for _, e := range led.entries {
+		require.NotEqual(t, "auto-rollback", e.By) // no auto-rollback ledger entry
+	}
 }
