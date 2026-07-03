@@ -243,7 +243,13 @@ func deployVerifyRecover(ctx context.Context, cfg *config.Config, envName, pinFi
 	}
 	env, ok := cfg.Environment(envName)
 	if !verifyFailed || !ok || !env.RollbackOnVerifyFailure() {
-		return "", verifyFailed, err // hold (or a non-verify failure)
+		return "", verifyFailed, err
+	}
+	// A blue-green deploy only stages the idle slot; the live slot is untouched, so a failed
+	// idle verify must hold. Auto-rollback would flip the pointer to the bad idle slot; the
+	// pre-switch verify gate (engine.Switch) is the blue-green safety mechanism instead.
+	if _, isSlot := ex.(executor.SlotExecutor); isSlot {
+		return "", verifyFailed, err
 	}
 	rb, rbErr := rollback(ctx, cfg, envName, ex, vf, store, led, RollbackOptions{}, "auto-rollback")
 	if rbErr != nil {
@@ -500,7 +506,7 @@ func otherSlot(a, b, live string) string {
 // Switch promotes the idle slot of a blue-green environment by flipping its pointer, gated
 // on the environment's current head pin commit having an ok ledger entry. It requires an
 // executor implementing executor.SlotExecutor.
-func Switch(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, store PinStore, led ledger.Ledger) (SwitchResult, error) {
+func Switch(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, vf verify.Verifier, store PinStore, led ledger.Ledger) (SwitchResult, error) {
 	env, ok := cfg.Environment(envName)
 	if !ok {
 		return SwitchResult{}, fmt.Errorf("environment %q not found", envName)
@@ -529,6 +535,11 @@ func Switch(ctx context.Context, cfg *config.Config, envName string, ex executor
 	}
 	a, b := se.Slots()
 	idle := otherSlot(a, b, live)
+	if vf != nil {
+		if err := vf.Verify(ctx); err != nil {
+			return SwitchResult{From: live, To: idle, Committed: head}, fmt.Errorf("refusing to switch %q: idle slot failed verification: %w", envName, err)
+		}
+	}
 	if err := se.SwitchTo(ctx, idle); err != nil {
 		return SwitchResult{From: live, To: idle, Committed: head}, err
 	}

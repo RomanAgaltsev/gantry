@@ -9,7 +9,11 @@ import (
 
 	"github.com/RomanAgaltsev/gantry/internal/executor"
 	"github.com/RomanAgaltsev/gantry/internal/pin"
+	"github.com/RomanAgaltsev/gantry/internal/verify"
 )
+
+// compile-time check
+var _ verify.ComposeVerifiable = (*Executor)(nil)
 
 // Runner executes a shell command on the target host, optionally feeding stdin.
 type Runner interface {
@@ -40,6 +44,11 @@ func (e *Executor) Deploy(ctx context.Context, p executor.Plan) (executor.Result
 		return executor.Result{}, err
 	}
 	return executor.Result{Changed: true, Detail: "compose pull && up -d"}, nil
+}
+
+// ComposeTarget reports where this executor runs compose, for compose-ps verification.
+func (e *Executor) ComposeTarget(context.Context) (verify.ComposeTarget, error) {
+	return verify.ComposeTarget{ProjectDir: e.ProjectDir, ComposeFiles: e.ComposeFiles, EnvFile: e.EnvFile}, nil
 }
 
 // ComposeOpts configures a compose pull+up run.

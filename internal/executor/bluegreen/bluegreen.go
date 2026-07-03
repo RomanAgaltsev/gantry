@@ -11,9 +11,13 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/executor"
 	"github.com/RomanAgaltsev/gantry/internal/executor/composessh"
 	"github.com/RomanAgaltsev/gantry/internal/pin"
+	"github.com/RomanAgaltsev/gantry/internal/verify"
 )
 
-var _ executor.SlotExecutor = (*Executor)(nil)
+var (
+	_ executor.SlotExecutor    = (*Executor)(nil)
+	_ verify.ComposeVerifiable = (*Executor)(nil)
+)
 
 const slotEnvFile = ".env"
 
@@ -121,4 +125,16 @@ func (e *Executor) SwitchTo(ctx context.Context, slot string) error {
 		return fmt.Errorf("reload after switch to %s: %w", slot, err)
 	}
 	return nil
+}
+
+// ComposeTarget resolves the idle slot's compose project (the slot Deploy stages), so a
+// compose-ps probe checks the slot about to be promoted rather than the live one.
+func (e *Executor) ComposeTarget(ctx context.Context) (verify.ComposeTarget, error) {
+	live, err := e.LiveSlot(ctx)
+	if err != nil {
+		return verify.ComposeTarget{}, err
+	}
+	idle := e.other(live)
+	s := e.SlotMap[idle]
+	return verify.ComposeTarget{ProjectDir: s.ProjectDir, ComposeFiles: s.ComposeFiles, EnvFile: slotEnvFile}, nil
 }
