@@ -48,3 +48,31 @@ promote:
 With `require_healthy: true`, `gantry promote` only accepts a source revision whose ledger
 entry is `ok` **and** `healthy: true`. Default (`false`) keeps the A2 behavior (a green
 `ok` entry is enough). See [promotion.md](promotion.md).
+
+## Auto-rollback on failed verify
+
+By default a failed post-deploy verify is recorded as `failed`/`unhealthy`, the command exits
+non-zero, and the broken deploy is left in place for inspection (`verify_on_failure: hold`).
+
+Set `verify_on_failure: rollback` on an environment to automatically revert to its last
+known-good pin set when a verify fails:
+
+```yaml
+environments:
+  - name: test
+    verify:
+      - { kind: compose-ps }
+    verify_on_failure: rollback
+```
+
+- Applies to `sync`, `deploy`, and `promote` (a failed `promote` reverts the *target*
+  environment). `rollback` and `switch` never auto-roll-back.
+- The revert reuses `gantry rollback`; its ledger entry is stamped `by=auto-rollback`, so
+  `gantry history` shows why the environment reverted.
+- The command still exits non-zero — auto-rollback restores service, it does not hide the
+  failure.
+- `rollback` requires at least one `verify` probe (otherwise nothing can fail).
+
+Note: because `sync` commits the new pin before deploying, a repeatedly-broken release will
+re-deploy and re-revert once per `sync` run until a fixed release is published. In CLI mode
+each run exits red; a "skip a known-failed release" backoff is planned for daemon mode.
