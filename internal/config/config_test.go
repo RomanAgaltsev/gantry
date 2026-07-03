@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -507,4 +508,35 @@ environments:
 `
 	_, err := Load(writeCfg(t, cfg))
 	require.NoError(t, err) // kind-aware ComposeTarget resolves the project at verify time
+}
+
+// withDaemon appends a daemon: block (built from a snippet) to the valid base config.
+func withDaemon(snippet string) string {
+	return goodCfg + "daemon:\n  " + snippet + "\n"
+}
+
+// loadYAMLErr writes body to a temp config and loads it, returning any error.
+func loadYAMLErr(t *testing.T, body string) (*Config, error) {
+	t.Helper()
+	return Load(writeCfg(t, body))
+}
+
+func TestLoad_DaemonDefaults(t *testing.T) {
+	cfg, err := Load(writeCfg(t, goodCfg)) // no daemon: block → all fields default
+	require.NoError(t, err)
+	require.Equal(t, 60*time.Second, cfg.Daemon.Interval.Duration())
+	require.Equal(t, ":9713", cfg.Daemon.Listen)
+	require.False(t, cfg.Daemon.Doorbell.Enabled)
+	require.Equal(t, "/hooks/forge", cfg.Daemon.Doorbell.Path)
+}
+
+func TestLoad_DaemonIntervalTooSmall(t *testing.T) {
+	// A non-zero sub-1s interval is rejected; 0 would be defaulted to 60s before validation.
+	_, err := loadYAMLErr(t, withDaemon(`interval: 500ms`))
+	require.ErrorContains(t, err, "daemon.interval")
+}
+
+func TestLoad_DoorbellEnabledRequiresSecret(t *testing.T) {
+	_, err := loadYAMLErr(t, withDaemon("doorbell:\n    enabled: true"))
+	require.ErrorContains(t, err, "doorbell")
 }
