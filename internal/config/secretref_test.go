@@ -86,3 +86,24 @@ func TestRunner_NonZeroExitCarriesStderr(t *testing.T) {
 	_, err := DefaultResolver().Runner(context.Background(), nil, "go", "definitely-not-a-subcommand")
 	require.Error(t, err)
 }
+
+func TestResolveCmd(t *testing.T) {
+	r := DefaultResolver()
+	r.Runner = func(_ context.Context, _ []string, name string, args ...string) ([]byte, error) {
+		require.Equal(t, "op", name)
+		require.Equal(t, []string{"read", "op://vault/item/field"}, args)
+		return []byte("s3cret\n"), nil
+	}
+	got, err := r.Resolve(SecretRef{Raw: "${cmd:op read op://vault/item/field}"})
+	require.NoError(t, err)
+	require.Equal(t, "s3cret", got) // trimmed
+}
+
+func TestResolveCmd_ErrorPropagates(t *testing.T) {
+	r := DefaultResolver()
+	r.Runner = func(context.Context, []string, string, ...string) ([]byte, error) {
+		return nil, errors.New("exit 1: denied")
+	}
+	_, err := r.Resolve(SecretRef{Raw: "${cmd:secret-tool get foo}"})
+	require.ErrorContains(t, err, "denied")
+}
