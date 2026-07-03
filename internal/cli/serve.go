@@ -75,6 +75,18 @@ func runServe(cmd *cobra.Command, interval string) error {
 	obs, metricsHandler := daemon.NewPrometheusObserver(Version)
 	deps.Metrics = obs
 
+	var bell <-chan struct{}
+	var bellMount doorbellMount
+	if cfg.Daemon.Doorbell.Enabled {
+		secret, err := res.Resolve(cfg.Daemon.Doorbell.Secret)
+		if err != nil {
+			return err
+		}
+		handler, ch := daemon.NewDoorbell(secret)
+		bell, bellMount = ch, doorbellMount{Path: cfg.Daemon.Doorbell.Path, Handler: handler}
+		logging.From(cmd.Context()).Info("doorbell enabled", "path", cfg.Daemon.Doorbell.Path)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(lockPath(path)), 0o750); err != nil {
 		return err
 	}
@@ -93,7 +105,7 @@ func runServe(cmd *cobra.Command, interval string) error {
 
 	srv := &http.Server{
 		Addr:              cfg.Daemon.Listen,
-		Handler:           buildServeMux(metricsHandler, nil),
+		Handler:           buildServeMux(metricsHandler, bellMount),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
@@ -104,7 +116,7 @@ func runServe(cmd *cobra.Command, interval string) error {
 
 	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	err = daemon.Run(ctx, *deps, daemon.Options{Interval: ivl})
+	err = daemon.Run(ctx, *deps, daemon.Options{Interval: ivl, Doorbell: bell})
 
 	shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -143,10 +155,17 @@ func serveDeps(cfg *config.Config, path string, res config.SecretResolver) (*dae
 	}, nil
 }
 
-// serveMux builds the HTTP mux for the daemon. /healthz is always registered; /metrics is
-// registered when metrics != nil (C3b); the doorbell handler is registered when non-nil
-// (C3c). The handler is nil-safe so C3c can add its route without touching this helper.
-func buildServeMux(metrics, doorbell http.Handler) *http.ServeMux {
+// doorbellMount binds a doorbell handler to the path it is served at. A zero value (empty
+// Path) mounts nothing, so callers without a doorbell pass doorbellMount{}.
+type doorbellMount struct {
+	Path    string
+	Handler http.Handler
+}
+
+// buildServeMux builds the HTTP mux for the daemon. /healthz is always registered; /metrics is
+// registered when metrics != nil (C3b); the doorbell is registered at doorbell.Path when
+// non-empty (C3c). One helper both slices share; C3c only supplies the doorbell mount.
+func buildServeMux(metrics http.Handler, doorbell doorbellMount) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok")) //nolint:gosec // a fixed "ok" body; a write failure is not actionable
@@ -154,8 +173,8 @@ func buildServeMux(metrics, doorbell http.Handler) *http.ServeMux {
 	if metrics != nil {
 		mux.Handle("/metrics", metrics)
 	}
-	if doorbell != nil {
-		mux.Handle("/hooks/forge", doorbell)
+	if doorbell.Path != "" {
+		mux.Handle(doorbell.Path, doorbell.Handler)
 	}
 	return mux
 }

@@ -43,7 +43,7 @@ func TestMutatingVerbs_RefuseWhileDaemonRuns(t *testing.T) {
 
 func TestBuildServeMux_ServesMetricsAndHealthz(t *testing.T) {
 	_, metricsHandler := daemon.NewPrometheusObserver("test")
-	mux := buildServeMux(metricsHandler, nil)
+	mux := buildServeMux(metricsHandler, doorbellMount{})
 
 	for path, want := range map[string]string{"/healthz": "ok", "/metrics": "gantry_"} {
 		rec := httptest.NewRecorder()
@@ -51,6 +51,17 @@ func TestBuildServeMux_ServesMetricsAndHealthz(t *testing.T) {
 		require.Equal(t, http.StatusOK, rec.Code)
 		require.Contains(t, rec.Body.String(), want)
 	}
+}
+
+func TestBuildServeMux_MountsDoorbellWhenProvided(t *testing.T) {
+	h, _ := daemon.NewDoorbell("s3cret")
+	mux := buildServeMux(nil, doorbellMount{Path: "/hooks/forge", Handler: h})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/hooks/forge", nil)
+	req.Header.Set("X-Gantry-Token", "s3cret")
+	mux.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusAccepted, rec.Code)
 }
 
 // findCommand returns the named subcommand of root, or nil if absent.
