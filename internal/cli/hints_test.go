@@ -29,3 +29,9 @@ func TestPromoteDAGWarning(t *testing.T) {
 	require.Contains(t, w, "promote_from")
 	require.Contains(t, w, "test")
 }
+
+func TestAutoRollbackNote(t *testing.T) {
+	require.Equal(t, "", autoRollbackNote("prod", ""))
+	require.Contains(t, autoRollbackNote("prod", "1a2b3c4d5e"), "rolled back to 1a2b3c4")
+	require.Contains(t, autoRollbackNote("front", "blue"), "rolled back to blue")
+}
