@@ -86,8 +86,12 @@ gantry serve --interval 15s
   *"a gantry daemon is reconciling this repo"*. A stale lock (dead owner, or >24h old) is
   reclaimed automatically.
 - **Health:** `/healthz` returns `ok` on the listen address (default `:9713`).
+- **Metrics:** scrape `/metrics` on the same port. Watch `gantry_drift_age_seconds` (a
+  component lagging its release past your threshold) and `gantry_verify_failures_total`
+  rising (reconciles that deployed but failed verification).
 
-See [daemon.md](daemon.md) for config, the systemd unit, and what C3b/C3c add.
+See [daemon.md](daemon.md) for config, the metrics families, the systemd unit, and what
+C3c adds.
 
 ## A deploy failed — now what?
 
