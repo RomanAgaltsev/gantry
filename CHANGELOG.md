@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0](https://github.com/RomanAgaltsev/gantry/compare/v0.10.0...v0.11.0) (2026-07-03)
+
+
+### Features
+
+* **cli:** wire compose-ps verify to the executor's kind-aware target ([7ff1ccd](https://github.com/RomanAgaltsev/gantry/commit/7ff1ccd4701193a4fd95464dcec6934ae8c1059b))
+* **config:** allow compose-ps on all executor kinds (kind-aware verify) ([9581bb5](https://github.com/RomanAgaltsev/gantry/commit/9581bb562d7b060b68cbd433daa8967a9602b879))
+* **engine:** blue-green deploys hold on failed verify (no auto-flip) ([b44d9d1](https://github.com/RomanAgaltsev/gantry/commit/b44d9d1792965150763d222d5943ca2dff23dda9))
+* **engine:** gate switch on a fresh idle-slot verify ([4960fed](https://github.com/RomanAgaltsev/gantry/commit/4960fed8eda18e6537a185a33cc6a0b83ed45a4a))
+* **executor:** implement ComposeTarget for all three executor kinds ([8740a84](https://github.com/RomanAgaltsev/gantry/commit/8740a84245e3bf9030a3a4cf9eb4416594e1df71))
+* kind aware verification ([57b91c0](https://github.com/RomanAgaltsev/gantry/commit/57b91c0b60652928ca5f3c4a05727c9bd1cc9e0d))
+* **verify:** resolve compose-ps target at verify time via ([ec86852](https://github.com/RomanAgaltsev/gantry/commit/ec868529028ae13e70fca9914633984ee6d417aa))
+
 ## [0.10.0](https://github.com/RomanAgaltsev/gantry/compare/v0.9.0...v0.10.0) (2026-07-03)
 
 
