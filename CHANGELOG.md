@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.0](https://github.com/RomanAgaltsev/gantry/compare/v0.11.0...v0.12.0) (2026-07-03)
+
+
+### Features
+
+* **cli:** add serve command and guard mutating verbs against a running ([2566d89](https://github.com/RomanAgaltsev/gantry/commit/2566d893cc048848384f5ba0b5519dbea2e3b92e))
+* **config:** add optional daemon block with defaults and validation ([3f00e5d](https://github.com/RomanAgaltsev/gantry/commit/3f00e5d08ad6c8e03884b13478231a822ee1169d))
+* daemon core ([1032b06](https://github.com/RomanAgaltsev/gantry/commit/1032b063427825ac943aecc74cc3ff394df8a32f))
+* **daemon:** add advisory single-writer lockfile with staleness reclaim ([fb92c3e](https://github.com/RomanAgaltsev/gantry/commit/fb92c3e3c6e086b8ecefb2445271d81a0297f542))
+* **daemon:** add reconcile loop over track-mode environments ([f31e0ab](https://github.com/RomanAgaltsev/gantry/commit/f31e0abdef3cc1afd90ccb3f14da210a1ea6fe77))
+* **notify:** build a Dispatcher from config (shared by daemon and CLI) ([e5473f5](https://github.com/RomanAgaltsev/gantry/commit/e5473f5fbe6c4a0e03cf77c56e2f4992196de739))
+
 ## [0.11.0](https://github.com/RomanAgaltsev/gantry/compare/v0.10.0...v0.11.0) (2026-07-03)
 
 
