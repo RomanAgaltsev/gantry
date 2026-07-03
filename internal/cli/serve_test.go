@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -36,6 +38,18 @@ func TestMutatingVerbs_RefuseWhileDaemonRuns(t *testing.T) {
 		cmd.SetArgs(append(args, "--config", repo))
 		err := cmd.Execute()
 		require.ErrorContains(t, err, "reconciling this repo", "verb %v should refuse", args)
+	}
+}
+
+func TestBuildServeMux_ServesMetricsAndHealthz(t *testing.T) {
+	_, metricsHandler := daemon.NewPrometheusObserver("test")
+	mux := buildServeMux(metricsHandler, nil)
+
+	for path, want := range map[string]string{"/healthz": "ok", "/metrics": "gantry_"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Body.String(), want)
 	}
 }
 

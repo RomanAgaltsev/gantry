@@ -40,5 +40,5 @@ Two persistent flags control the diagnostic log on stderr:
 - `--log-level debug|info|warn|error` (default `info`)
 
 Logs are structured (`slog`). Use `--log-format json` when shipping logs to a
-collector. Metrics (Prometheus) arrive with the daemon; a short-lived CLI
-run has nothing to scrape.
+collector. The daemon exposes Prometheus metrics — see
+[daemon.md#metrics](daemon.md#metrics); a short-lived CLI run has nothing to scrape.
