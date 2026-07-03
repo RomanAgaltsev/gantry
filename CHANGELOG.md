@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.9.0](https://github.com/RomanAgaltsev/gantry/compare/v0.8.1...v0.9.0) (2026-07-03)
+
+
+### Features
+
+* auto rollback ([a0e6142](https://github.com/RomanAgaltsev/gantry/commit/a0e6142e77ac36b9b872ef8eff68b0b0c08db164))
+* **cli:** note the auto-rollback when a verify-triggered rollback ([48e0198](https://github.com/RomanAgaltsev/gantry/commit/48e019838fd2141357c0912922344b287191dd3d))
+* **config:** add per-env verify_on_failure (hold|rollback) ([4fed230](https://github.com/RomanAgaltsev/gantry/commit/4fed23015eb5fcc95d2bc726e743d5d95d996ce5))
+* **engine:** auto-rollback on failed verify when verify_on_failure=rollback ([14e09d0](https://github.com/RomanAgaltsev/gantry/commit/14e09d0fb8fb8c5aafbd7d30459e6094b5a95ac5))
+
+
+### Bug Fixes
+
+* fmt ([35bc252](https://github.com/RomanAgaltsev/gantry/commit/35bc2528672d97d1ef988e74fdd880654ec6b0bd))
+
 ## [0.8.1](https://github.com/RomanAgaltsev/gantry/compare/v0.8.0...v0.8.1) (2026-07-01)
 
 
