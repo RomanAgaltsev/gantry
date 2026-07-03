@@ -16,7 +16,7 @@ func newSwitchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := engine.Switch(cmd.Context(), d.cfg, envName, d.exec, d.store, d.ledger)
+			res, err := engine.Switch(cmd.Context(), d.cfg, envName, d.exec, d.verify, d.store, d.ledger)
 			if err != nil {
 				return err
 			}
