@@ -144,6 +144,9 @@ func newSyncCmd() *cobra.Command {
 			}
 			res, err := engine.Sync(cmd.Context(), d.cfg, d.env, d.forge, d.exec, d.verify, d.store, d.ledger, engine.SyncOptions{DryRun: dryRun})
 			if err != nil {
+				if note := autoRollbackNote(envName, res.RolledBackTo); note != "" {
+					cmd.PrintErrln(note)
+				}
 				return err
 			}
 			printChanges(cmd, res.Changes, res.Deployed, res.Recovered)

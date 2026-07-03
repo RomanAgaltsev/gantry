@@ -18,6 +18,9 @@ func newDeployCmd() *cobra.Command {
 			}
 			res, err := engine.Deploy(cmd.Context(), d.cfg, d.env, d.exec, d.verify, d.store, d.ledger)
 			if err != nil {
+				if note := autoRollbackNote(envName, res.RolledBackTo); note != "" {
+					cmd.PrintErrln(note)
+				}
 				return err
 			}
 			if res.Deployed {
