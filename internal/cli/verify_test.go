@@ -37,6 +37,7 @@ type fakeComposeExec struct {
 func (f fakeComposeExec) Deploy(context.Context, executor.Plan) (executor.Result, error) {
 	return executor.Result{}, nil
 }
+
 func (f fakeComposeExec) ComposeTarget(context.Context) (verify.ComposeTarget, error) {
 	return f.target, nil
 }
