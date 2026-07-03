@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.13.0](https://github.com/RomanAgaltsev/gantry/compare/v0.12.0...v0.13.0) (2026-07-03)
+
+
+### Features
+
+* **cli:** expose /metrics and wire the Prometheus observer into serve ([06026a6](https://github.com/RomanAgaltsev/gantry/commit/06026a620969e2aa667cec1a9f8b88e3e3b71e77))
+* daemon metrics ([939b4fc](https://github.com/RomanAgaltsev/gantry/commit/939b4fc94542b59feff32199bd5e498301b8dc49))
+* **daemon:** add Prometheus observer with reconcile/deploy/drift metrics ([1e16e68](https://github.com/RomanAgaltsev/gantry/commit/1e16e6822e9af80410e794eca5c49db851036a0d))
+
 ## [0.12.0](https://github.com/RomanAgaltsev/gantry/compare/v0.11.0...v0.12.0) (2026-07-03)
 
 
