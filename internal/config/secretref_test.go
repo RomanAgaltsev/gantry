@@ -107,3 +107,32 @@ func TestResolveCmd_ErrorPropagates(t *testing.T) {
 	_, err := r.Resolve(SecretRef{Raw: "${cmd:secret-tool get foo}"})
 	require.ErrorContains(t, err, "denied")
 }
+
+func TestResolveSOPS_DottedKey(t *testing.T) {
+	r := DefaultResolver()
+	r.Runner = func(_ context.Context, _ []string, name string, args ...string) ([]byte, error) {
+		require.Equal(t, "sops", name)
+		require.Equal(t, []string{"-d", "secrets.enc.yaml"}, args)
+		return []byte("db:\n  password: hunter2\n"), nil
+	}
+	got, err := r.Resolve(SecretRef{Raw: "${sops:secrets.enc.yaml#db.password}"})
+	require.NoError(t, err)
+	require.Equal(t, "hunter2", got)
+}
+
+func TestResolveSOPS_MissingKeyErrors(t *testing.T) {
+	r := DefaultResolver()
+	r.Runner = func(context.Context, []string, string, ...string) ([]byte, error) { return []byte("a: 1\n"), nil }
+	_, err := r.Resolve(SecretRef{Raw: "${sops:f#b.c}"})
+	require.ErrorContains(t, err, "b.c")
+}
+
+func TestResolveSOPS_NoKeyReturnsWholeOutput(t *testing.T) {
+	r := DefaultResolver()
+	r.Runner = func(context.Context, []string, string, ...string) ([]byte, error) {
+		return []byte("just-the-secret\n"), nil
+	}
+	got, err := r.Resolve(SecretRef{Raw: "${sops:token.enc}"})
+	require.NoError(t, err)
+	require.Equal(t, "just-the-secret", got)
+}
