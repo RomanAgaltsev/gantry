@@ -117,7 +117,7 @@ func buildExecAndVerify(res config.SecretResolver, cfg *config.Config, env *conf
 	if err != nil {
 		return nil, nil, err
 	}
-	return ex, buildVerifiers(env.Verify, runner, env.Executor), nil
+	return ex, buildVerifiers(env.Verify, runner, ex), nil
 }
 
 // resolveLogins resolves each registry's credentials for the executor to log in with.
