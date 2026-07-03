@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.0](https://github.com/RomanAgaltsev/gantry/compare/v0.13.0...v0.14.0) (2026-07-03)
+
+
+### Features
+
+* **cli:** mount the doorbell and feed it into the reconcile loop ([1dd8375](https://github.com/RomanAgaltsev/gantry/commit/1dd8375c6a3784ea6831257464943c6e7828a3bc))
+* **daemon:** add authenticated debounced doorbell handler ([15cbd47](https://github.com/RomanAgaltsev/gantry/commit/15cbd47d09ff99165330a47f800f2c8eafff9886))
+* doorbell ([2a59283](https://github.com/RomanAgaltsev/gantry/commit/2a59283d2ad67573336a94f009be7403992c9292))
+
 ## [0.13.0](https://github.com/RomanAgaltsev/gantry/compare/v0.12.0...v0.13.0) (2026-07-03)
 
 
