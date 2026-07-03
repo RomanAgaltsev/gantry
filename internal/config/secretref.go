@@ -86,6 +86,44 @@ func resolveCmd(r SecretResolver, arg string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// resolveSOPS decrypts a SOPS file via the sops binary and extracts a dotted key. Arg form:
+// "path#dotted.key"; with no "#key" the whole trimmed decrypted output is the secret.
+func resolveSOPS(r SecretResolver, arg string) (string, error) {
+	file, key, hasKey := strings.Cut(arg, "#")
+	out, err := r.run("sops", "-d", file)
+	if err != nil {
+		return "", fmt.Errorf("sops decrypt %q: %w", file, err)
+	}
+	if !hasKey {
+		return strings.TrimSpace(string(out)), nil
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(out, &doc); err != nil {
+		return "", fmt.Errorf("sops %q: parse decrypted YAML: %w", file, err)
+	}
+	v, err := walkDotted(doc, key)
+	if err != nil {
+		return "", fmt.Errorf("sops %q: %w", file, err)
+	}
+	return v, nil
+}
+
+// walkDotted follows a dotted path into a decoded YAML/JSON map to a scalar leaf.
+func walkDotted(doc map[string]any, path string) (string, error) {
+	var cur any = doc
+	for _, part := range strings.Split(path, ".") {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return "", fmt.Errorf("key %q: %q is not a map", path, part)
+		}
+		cur, ok = m[part]
+		if !ok {
+			return "", fmt.Errorf("key %q not found", path)
+		}
+	}
+	return fmt.Sprintf("%v", cur), nil
+}
+
 // SchemeFunc resolves the arg of a ${scheme:arg} ref. res is passed so a backend can compose
 // other schemes (e.g. vault resolving its own token) and so tests can inject fakes.
 type SchemeFunc func(res SecretResolver, arg string) (string, error)
@@ -96,6 +134,7 @@ var schemes = map[string]SchemeFunc{
 	"env":  resolveEnv,
 	"file": resolveFile,
 	"cmd":  resolveCmd,
+	"sops": resolveSOPS,
 }
 
 // Register adds or overrides a secret scheme. Intended for tests and future backends
