@@ -23,6 +23,7 @@ func newPromoteCmd() *cobra.Command {
 				}
 			}
 			res, err := engine.Promote(cmd.Context(), d.cfg, fromEnv, toEnv, sha, d.exec, d.verify, d.store, d.ledger, engine.PromoteOptions{DryRun: dryRun})
+			d.notifier.Dispatch(cmd.Context(), promoteEvents(fromEnv, toEnv, res, err)...)
 			if err != nil {
 				if note := autoRollbackNote(toEnv, res.RolledBackTo); note != "" {
 					cmd.PrintErrln(note)
