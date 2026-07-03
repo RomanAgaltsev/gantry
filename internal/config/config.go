@@ -4,26 +4,47 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 // Config is the whole gantry.yaml.
 type Config struct {
-	Forge        ForgeConfig           `yaml:"forge"`
-	Connections  map[string]Connection `yaml:"connections"`
-	Components   []Component           `yaml:"components"`
-	Environments []Environment         `yaml:"environments"`
-	Registries   map[string]Registry   `yaml:"registries"`
-	Git          GitConfig             `yaml:"git"`
-	Drift        DriftConfig           `yaml:"drift"`
-	Promote      PromoteConfig         `yaml:"promote"`
+	Forge         ForgeConfig           `yaml:"forge"`
+	Connections   map[string]Connection `yaml:"connections"`
+	Components    []Component           `yaml:"components"`
+	Environments  []Environment         `yaml:"environments"`
+	Registries    map[string]Registry   `yaml:"registries"`
+	Git           GitConfig             `yaml:"git"`
+	Drift         DriftConfig           `yaml:"drift"`
+	Promote       PromoteConfig         `yaml:"promote"`
+	Notifications []NotifyChannel       `yaml:"notifications"`
 }
 
 // PromoteConfig tunes the promotion gate. Optional; require_healthy defaults false so
 // enabling verification never retroactively breaks an existing config.
 type PromoteConfig struct {
 	RequireHealthy bool `yaml:"require_healthy"`
+}
+
+// NotifyChannel is one configured notification destination.
+type NotifyChannel struct {
+	Kind   string     `yaml:"kind"`    // webhook | email
+	URL    SecretRef  `yaml:"url"`     // webhook (holds the Telegram bot token)
+	ChatID SecretRef  `yaml:"chat_id"` // webhook, optional (Telegram)
+	SMTP   SMTPConfig `yaml:"smtp"`    // email
+	From   string     `yaml:"from"`    // email
+	To     []string   `yaml:"to"`      // email
+	Events []string   `yaml:"events"`  // subscribed kinds; empty = all
+}
+
+// SMTPConfig configures the email backend's SMTP transport.
+type SMTPConfig struct {
+	Host     string    `yaml:"host"`
+	Port     int       `yaml:"port"`
+	Username string    `yaml:"username"`
+	Password SecretRef `yaml:"password"`
 }
 
 // VerifyProbe is one post-deploy health check for an environment.
@@ -202,7 +223,10 @@ func (c *Config) validate() error {
 	if err := c.validateComponents(); err != nil {
 		return err
 	}
-	return c.validateEnvironments()
+	if err := c.validateEnvironments(); err != nil {
+		return err
+	}
+	return c.validateNotifications()
 }
 
 func (c *Config) validateComponents() error {
@@ -324,6 +348,34 @@ func validateBlueGreen(env Environment) error {
 	p := env.Executor.Pointer
 	if p.Link == "" || p.Blue == "" || p.Green == "" || p.Reload == "" {
 		return fmt.Errorf("environment %q: blue-green pointer requires link, blue, green, reload", env.Name)
+	}
+	return nil
+}
+
+var notifyEventKinds = map[string]bool{
+	"deployed": true, "promoted": true, "rolled_back": true,
+	"verify_failed": true, "drift_alarm": true,
+}
+
+func (c *Config) validateNotifications() error {
+	for i, ch := range c.Notifications {
+		switch ch.Kind {
+		case "webhook":
+			if strings.TrimSpace(ch.URL.Raw) == "" {
+				return fmt.Errorf("notifications[%d]: webhook requires url", i)
+			}
+		case "email":
+			if ch.SMTP.Host == "" || ch.From == "" || len(ch.To) == 0 {
+				return fmt.Errorf("notifications[%d]: email requires smtp.host, from, and at least one to", i)
+			}
+		default:
+			return fmt.Errorf("notifications[%d]: unsupported kind %q (want webhook|email)", i, ch.Kind)
+		}
+		for _, ev := range ch.Events {
+			if !notifyEventKinds[ev] {
+				return fmt.Errorf("notifications[%d]: unknown event %q (want deployed|promoted|rolled_back|verify_failed|drift_alarm)", i, ev)
+			}
+		}
 	}
 	return nil
 }

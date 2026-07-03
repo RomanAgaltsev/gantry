@@ -54,6 +54,7 @@ func newDriftCmd() *cobra.Command {
 					return err
 				}
 				printDriftReport(cmd, rep, d.cfg.Drift.ThresholdOrDefault())
+				d.notifier.Dispatch(cmd.Context(), driftEvents(rep)...)
 				drifted = drifted || rep.Drifted()
 			}
 			if !drifted {

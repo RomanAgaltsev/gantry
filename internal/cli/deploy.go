@@ -17,6 +17,7 @@ func newDeployCmd() *cobra.Command {
 				return err
 			}
 			res, err := engine.Deploy(cmd.Context(), d.cfg, d.env, d.exec, d.verify, d.store, d.ledger)
+			d.notifier.Dispatch(cmd.Context(), deployEvents(envName, res, err)...)
 			if err != nil {
 				if note := autoRollbackNote(envName, res.RolledBackTo); note != "" {
 					cmd.PrintErrln(note)

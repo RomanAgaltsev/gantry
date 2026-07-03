@@ -585,3 +585,25 @@ func TestRollback_DoesNotAutoRollback(t *testing.T) {
 		require.NotEqual(t, "auto-rollback", e.By)
 	}
 }
+
+func TestDeploy_HoldSetsVerifyFailed(t *testing.T) {
+	c := &config.Config{Environments: []config.Environment{{
+		Name: "test", Source: config.Source{Track: "latest"}, PinFile: ".env.versions.test",
+		Verify: []config.VerifyProbe{{Kind: "http", URL: "x"}}, // default hold
+	}}}
+	store := &fakeStore{cur: pin.Set{"K": "img:v2"}, headSHA: "bad"}
+	res, err := Deploy(context.Background(), c, "test", &fakeExec{}, fakeVerifier{errors.New("503")}, store, &fakeLedger{})
+	require.Error(t, err)
+	require.True(t, res.VerifyFailed)
+	require.False(t, res.AutoRolledBack)
+}
+
+func TestDeploy_DeployFailureIsNotVerifyFailed(t *testing.T) {
+	c := &config.Config{Environments: []config.Environment{{
+		Name: "test", Source: config.Source{Track: "latest"}, PinFile: ".env.versions.test",
+	}}}
+	store := &fakeStore{cur: pin.Set{"K": "img:v2"}, headSHA: "bad"}
+	res, err := Deploy(context.Background(), c, "test", &failExec{}, fakeVerifier{nil}, store, &fakeLedger{})
+	require.Error(t, err)
+	require.False(t, res.VerifyFailed) // an SSH/deploy failure is not a verify failure
+}
