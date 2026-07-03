@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.15.0](https://github.com/RomanAgaltsev/gantry/compare/v0.14.0...v0.15.0) (2026-07-03)
+
+
+### Features
+
+* **config:** add ${cmd:…} secret backend ([2376cac](https://github.com/RomanAgaltsev/gantry/commit/2376cac65adf02ae165f9958a6d8ee1da422b831))
+* **config:** add ${sops:path#key} secret backend ([3a1dcde](https://github.com/RomanAgaltsev/gantry/commit/3a1dcdee47645216b7c531f2264fc771865389c9))
+* **config:** add ${vault:…} secret backend with secrets.vault defaults ([072bf76](https://github.com/RomanAgaltsev/gantry/commit/072bf76cb8e750bfaa68a48be72962fdcef4a3b6))
+* **config:** add an injectable command runner to SecretResolver ([9806a25](https://github.com/RomanAgaltsev/gantry/commit/9806a25297d1e2dbd13415adc54fa250febfe9cc))
+* secret backends ([17ffc9b](https://github.com/RomanAgaltsev/gantry/commit/17ffc9b9076fdf38309d366be3fd814ac3088285))
+
 ## [0.14.0](https://github.com/RomanAgaltsev/gantry/compare/v0.13.0...v0.14.0) (2026-07-03)
 
 
