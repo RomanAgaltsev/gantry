@@ -47,9 +47,8 @@ environments:
       compose_files: [compose.yaml]
       env_file: .env.versions.prod
     verify:
-      # compose-ps is only valid for compose-over-ssh (see the `test` env); symlink-release
-      # runs compose from current/.env, so verify the release over HTTP instead.
       - { kind: http, url: https://app.example.com/healthz, expect_status: 200 }
+      - { kind: compose-ps } # now kind-aware: verifies current/.env
   - name: front
     source: { track: latest }
     pin_file: .env.versions.front
@@ -64,6 +63,8 @@ environments:
         blue: /etc/nginx/conf.d/upstream-blue.conf
         green: /etc/nginx/conf.d/upstream-green.conf
         reload: "nginx -s reload"
+    verify:
+      - { kind: compose-ps } # checks the idle slot before switch
 notifications:
   - kind: webhook
     url: ${env:GANTRY_WEBHOOK_URL} # e.g. a Telegram sendMessage URL or any JSON sink

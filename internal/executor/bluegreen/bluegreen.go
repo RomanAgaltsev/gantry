@@ -14,8 +14,10 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/verify"
 )
 
-var _ executor.SlotExecutor = (*Executor)(nil)
-var _ verify.ComposeVerifiable = (*Executor)(nil)
+var (
+	_ executor.SlotExecutor    = (*Executor)(nil)
+	_ verify.ComposeVerifiable = (*Executor)(nil)
+)
 
 const slotEnvFile = ".env"
 

@@ -76,3 +76,23 @@ environments:
 Note: because `sync` commits the new pin before deploying, a repeatedly-broken release will
 re-deploy and re-revert once per `sync` run until a fixed release is published. In CLI mode
 each run exits red; a "skip a known-failed release" backoff is planned for daemon mode.
+
+## Verification per executor kind
+
+`compose-ps` resolves the compose project it checks at verify time:
+
+- **compose-over-ssh** — the configured `project_dir` / `env_file`.
+- **symlink-release** — the active release (`current/.env`).
+- **blue-green** — the **idle** slot (the one a deploy just staged), so a compose-ps probe
+  gates on the slot about to receive traffic.
+
+`gantry switch` runs the environment's verify probes against the idle slot **before** flipping
+the pointer; a failing probe refuses the switch and leaves live traffic untouched.
+
+For blue-green, use `compose-ps` or `command` probes to check the idle slot — they run over SSH
+and need no HTTP routing. An `http` probe hits the public URL, which serves the **live** slot;
+to http-check the idle slot, use a `command` probe (e.g. `curl` its internal port).
+
+Because a blue-green deploy only stages the idle slot (live is untouched), a failed deploy
+verify **holds** — it never auto-rolls-back, and `verify_on_failure: rollback` has no effect on
+a blue-green environment. The pre-switch verify gate is the blue-green safety mechanism.
