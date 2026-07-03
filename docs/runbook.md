@@ -66,6 +66,29 @@ gantry rollback --env front # flip back to the previous slot
 are recorded in the ledger (`by: switch` / `by: rollback`). See
 [blue-green.md](blue-green.md).
 
+## Run the daemon continuously
+
+`gantry serve` runs the reconcile loop as a long-lived process — it runs `sync` for you
+on an interval, across every track-mode environment, so `test` stays pinned to the latest
+releases without a CI schedule:
+
+```bash
+gantry serve               # reconcile every 60s (default) until interrupted
+gantry serve --interval 15s
+```
+
+- **Scope:** only **track-mode** environments are auto-reconciled; promote targets
+  (`prod`) are never advanced by the loop — keep running `gantry promote` by hand/CI.
+- **Stop it:** `Ctrl-C` or `SIGTERM` (`systemctl stop gantry` under systemd). It shuts
+  down gracefully: the loop stops, `/healthz` drains, and the lock is released.
+- **Lock:** while it runs it holds `.gantry/serve.lock`, and the mutating verbs
+  (`sync`/`deploy`/`promote`/`rollback`/`switch`) refuse with
+  *"a gantry daemon is reconciling this repo"*. A stale lock (dead owner, or >24h old) is
+  reclaimed automatically.
+- **Health:** `/healthz` returns `ok` on the listen address (default `:9713`).
+
+See [daemon.md](daemon.md) for config, the systemd unit, and what C3b/C3c add.
+
 ## A deploy failed — now what?
 
 A `sync`/`promote`/`rollback` whose deploy fails *after* its pin commit leaves the pins
