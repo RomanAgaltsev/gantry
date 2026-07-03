@@ -632,3 +632,20 @@ func TestSwitch_PassesWhenIdleVerifyOK(t *testing.T) {
 	require.Equal(t, "green", res.To)
 	require.Equal(t, "green", se.switchedTo)
 }
+
+func TestDeploy_BlueGreenHoldsOnVerifyFail_NoFlip(t *testing.T) {
+	cfg := bgCfg()
+	cfg.Environments[0].Verify = []config.VerifyProbe{{Kind: "compose-ps"}}
+	cfg.Environments[0].VerifyOnFailure = "rollback" // must be a NO-OP for blue-green
+	store := &fakeStore{headSHA: "h2"}
+	led := &fakeLedger{}
+	se := &fakeSlotExec{live: "blue"}
+
+	res, err := Deploy(context.Background(), cfg, "front", se, fakeVerifier{errors.New("503")}, store, led)
+	require.Error(t, err)
+	require.False(t, res.AutoRolledBack) // no auto-rollback for a slot executor
+	require.Equal(t, "", se.switchedTo)  // pointer never flipped
+	for _, e := range led.entries {
+		require.NotEqual(t, "auto-rollback", e.By) // no auto-rollback ledger entry
+	}
+}
