@@ -44,6 +44,7 @@ type SyncResult struct {
 	Recovered      bool   // a previously committed-but-undeployed pin set was redeployed
 	AutoRolledBack bool   // a failed verify triggered an automatic rollback
 	RolledBackTo   string // the pin commit SHA (file model) or slot (blue-green) reverted to
+	VerifyFailed   bool   // the failure (if any) was a failed post-deploy verify, not a deploy error
 }
 
 // Sync resolves each component's latest release into the environment's pin file
@@ -99,9 +100,9 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 	}
 	log.Info("pin written", "env", envName, "commit", sha, "changes", len(changes))
 
-	rolledBackTo, err := deployVerifyRecover(ctx, cfg, envName, env.PinFile, merged, sha, "sync", ex, vf, store, led)
+	rolledBackTo, verifyFailed, err := deployVerifyRecover(ctx, cfg, envName, env.PinFile, merged, sha, "sync", ex, vf, store, led)
 	if err != nil {
-		return SyncResult{Changes: changes, AutoRolledBack: rolledBackTo != "", RolledBackTo: rolledBackTo}, err
+		return SyncResult{Changes: changes, AutoRolledBack: rolledBackTo != "", RolledBackTo: rolledBackTo, VerifyFailed: verifyFailed}, err
 	}
 	return SyncResult{Changes: changes, Deployed: true}, nil
 }
@@ -127,9 +128,9 @@ func ensureGreen(ctx context.Context, cfg *config.Config, envName, pinFile strin
 	if opts.DryRun {
 		return SyncResult{Recovered: true}, nil
 	}
-	rolledBackTo, err := deployVerifyRecover(ctx, cfg, envName, pinFile, current, sha, "sync", ex, vf, store, led)
+	rolledBackTo, verifyFailed, err := deployVerifyRecover(ctx, cfg, envName, pinFile, current, sha, "sync", ex, vf, store, led)
 	if err != nil {
-		return SyncResult{Recovered: true, AutoRolledBack: rolledBackTo != "", RolledBackTo: rolledBackTo}, err
+		return SyncResult{Recovered: true, AutoRolledBack: rolledBackTo != "", RolledBackTo: rolledBackTo, VerifyFailed: verifyFailed}, err
 	}
 	return SyncResult{Deployed: true, Recovered: true}, nil
 }
@@ -149,6 +150,7 @@ type DeployResult struct {
 	Deployed       bool
 	AutoRolledBack bool   // a failed verify triggered an automatic rollback
 	RolledBackTo   string // the pin commit SHA (file model) or slot (blue-green) reverted to
+	VerifyFailed   bool   // the failure (if any) was a failed post-deploy verify, not a deploy error
 }
 
 // Deploy reconciles the running stack of an environment to its current committed pin
@@ -170,9 +172,9 @@ func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor
 	if err != nil {
 		return DeployResult{}, err
 	}
-	rolledBackTo, err := deployVerifyRecover(ctx, cfg, envName, env.PinFile, pins, sha, "deploy", ex, vf, store, led)
+	rolledBackTo, verifyFailed, err := deployVerifyRecover(ctx, cfg, envName, env.PinFile, pins, sha, "deploy", ex, vf, store, led)
 	if err != nil {
-		return DeployResult{AutoRolledBack: rolledBackTo != "", RolledBackTo: rolledBackTo}, err
+		return DeployResult{AutoRolledBack: rolledBackTo != "", RolledBackTo: rolledBackTo, VerifyFailed: verifyFailed}, err
 	}
 	return DeployResult{Pins: pins, Deployed: true}, nil
 }
@@ -234,24 +236,24 @@ func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha
 // verify (not a failed deploy) and the environment opted into rollback, it auto-rolls-back via
 // engine.rollback (stamped by="auto-rollback"). It returns the reverted-to SHA/slot ("" when no
 // rollback happened) and the still-non-nil error describing the original failure.
-func deployVerifyRecover(ctx context.Context, cfg *config.Config, envName, pinFile string, pins pin.Set, sha, by string, ex executor.Executor, vf verify.Verifier, store PinStore, led ledger.Ledger) (rolledBackTo string, err error) {
-	verifyFailed, err := deployAndRecord(ctx, envName, pinFile, pins, sha, by, ex, vf, led)
+func deployVerifyRecover(ctx context.Context, cfg *config.Config, envName, pinFile string, pins pin.Set, sha, by string, ex executor.Executor, vf verify.Verifier, store PinStore, led ledger.Ledger) (rolledBackTo string, verifyFailed bool, err error) {
+	verifyFailed, err = deployAndRecord(ctx, envName, pinFile, pins, sha, by, ex, vf, led)
 	if err == nil {
-		return "", nil
+		return "", false, nil
 	}
 	env, ok := cfg.Environment(envName)
 	if !verifyFailed || !ok || !env.RollbackOnVerifyFailure() {
-		return "", err // hold: surface the failure unchanged
+		return "", verifyFailed, err // hold (or a non-verify failure)
 	}
 	rb, rbErr := rollback(ctx, cfg, envName, ex, vf, store, led, RollbackOptions{}, "auto-rollback")
 	if rbErr != nil {
-		return "", errors.Join(err, fmt.Errorf("auto-rollback: %w", rbErr))
+		return "", verifyFailed, errors.Join(err, fmt.Errorf("auto-rollback: %w", rbErr))
 	}
 	target := rb.ToSHA
 	if target == "" {
 		target = rb.Slot
 	}
-	return target, fmt.Errorf("verify failed, rolled back: %w", err)
+	return target, verifyFailed, fmt.Errorf("verify failed, rolled back: %w", err)
 }
 
 // pinsEqual reports whether two pin sets hold exactly the same keys and values.
@@ -286,6 +288,7 @@ type PromoteResult struct {
 	DryRun         bool
 	AutoRolledBack bool   // a failed verify triggered an automatic rollback
 	RolledBackTo   string // the pin commit SHA (file model) or slot (blue-green) reverted to
+	VerifyFailed   bool   // the failure (if any) was a failed post-deploy verify, not a deploy error
 }
 
 // Promote copies fromEnv's pin file as of sha into toEnv's pin file and deploys it.
@@ -352,9 +355,9 @@ func Promote(ctx context.Context, cfg *config.Config, fromEnv, toEnv, sha string
 	if err != nil {
 		return PromoteResult{}, err
 	}
-	rolledBackTo, err := deployVerifyRecover(ctx, cfg, toEnv, to.PinFile, pins, newSHA, "promote", ex, vf, store, led)
+	rolledBackTo, verifyFailed, err := deployVerifyRecover(ctx, cfg, toEnv, to.PinFile, pins, newSHA, "promote", ex, vf, store, led)
 	if err != nil {
-		return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA, AutoRolledBack: rolledBackTo != "", RolledBackTo: rolledBackTo}, err
+		return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA, AutoRolledBack: rolledBackTo != "", RolledBackTo: rolledBackTo, VerifyFailed: verifyFailed}, err
 	}
 	return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA, Deployed: true}, nil
 }
