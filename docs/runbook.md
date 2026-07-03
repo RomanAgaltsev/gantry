@@ -13,6 +13,11 @@ conceptual model of the ledger, promotion, and rollback, see
   (`refusing to commit: "<path>" is already staged`). Commit or unstage them first.
 - gantry commits locally and does **not** push. In CI the runner must push the pin **and**
   ledger commits so promotion/rollback on another machine see the same history.
+- credentials are **SecretRefs** (`${env:…}`/`${file:…}` built in; `${cmd:…}`, `${sops:…}`,
+  `${vault:…}` shell out to host CLIs). Point a credential at Vault/SOPS with e.g.
+  `password: ${sops:secrets.enc.yaml#reg.password}` — but the matching `sops`/`vault` binary
+  must be present on the host (the default distroless image ships only `env`/`file`/`cmd`).
+  A referenced-but-missing secret always errors; see [secrets.md](secrets.md).
 
 ## Roll a new release into `test`
 
