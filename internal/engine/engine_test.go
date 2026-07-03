@@ -339,16 +339,18 @@ func TestDeployAndRecord_VerifyMatrix(t *testing.T) {
 
 	t.Run("deploy ok, verify pass -> ok/true", func(t *testing.T) {
 		_, led := base()
-		err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, fakeVerifier{nil}, led)
+		vfd, err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, fakeVerifier{nil}, led)
 		require.NoError(t, err)
+		require.False(t, vfd)
 		require.Equal(t, "ok", led.entries[0].Result)
 		require.Equal(t, "true", led.entries[0].Healthy)
 	})
 
 	t.Run("deploy ok, verify fail -> failed/false + error", func(t *testing.T) {
 		_, led := base()
-		err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, fakeVerifier{errors.New("503")}, led)
+		vfd, err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, fakeVerifier{errors.New("503")}, led)
 		require.Error(t, err)
+		require.True(t, vfd) // the verify step failed
 		require.Contains(t, err.Error(), "verify")
 		require.Equal(t, "failed", led.entries[0].Result)
 		require.Equal(t, "false", led.entries[0].Healthy)
@@ -356,16 +358,17 @@ func TestDeployAndRecord_VerifyMatrix(t *testing.T) {
 
 	t.Run("no verifier -> ok/unknown (A2 behavior preserved)", func(t *testing.T) {
 		_, led := base()
-		err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, nil, led)
+		vfd, err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, nil, led)
 		require.NoError(t, err)
-		require.Equal(t, "ok", led.entries[0].Result)
+		require.False(t, vfd)
 		require.Equal(t, "unknown", led.entries[0].Healthy)
 	})
 
 	t.Run("deploy fail -> verify not run, failed/unknown", func(t *testing.T) {
 		_, led := base()
-		err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &failExec{}, fakeVerifier{errors.New("unused")}, led)
+		vfd, err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &failExec{}, fakeVerifier{errors.New("unused")}, led)
 		require.Error(t, err)
+		require.False(t, vfd) // a deploy failure is not a verify failure
 		require.Contains(t, err.Error(), "deploy")
 		require.Equal(t, "failed", led.entries[0].Result)
 		require.Equal(t, "unknown", led.entries[0].Healthy)

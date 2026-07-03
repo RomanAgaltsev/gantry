@@ -97,7 +97,7 @@ func Sync(ctx context.Context, cfg *config.Config, envName string, f forge.Forge
 	}
 	log.Info("pin written", "env", envName, "commit", sha, "changes", len(changes))
 
-	if err := deployAndRecord(ctx, envName, env.PinFile, merged, sha, "sync", ex, vf, led); err != nil {
+	if _, err := deployAndRecord(ctx, envName, env.PinFile, merged, sha, "sync", ex, vf, led); err != nil {
 		return SyncResult{Changes: changes}, err
 	}
 	return SyncResult{Changes: changes, Deployed: true}, nil
@@ -124,7 +124,7 @@ func ensureGreen(ctx context.Context, envName, pinFile string, current pin.Set, 
 	if opts.DryRun {
 		return SyncResult{Recovered: true}, nil
 	}
-	if err := deployAndRecord(ctx, envName, pinFile, current, sha, "sync", ex, vf, led); err != nil {
+	if _, err := deployAndRecord(ctx, envName, pinFile, current, sha, "sync", ex, vf, led); err != nil {
 		return SyncResult{Recovered: true}, err
 	}
 	return SyncResult{Deployed: true, Recovered: true}, nil
@@ -164,7 +164,7 @@ func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor
 	if err != nil {
 		return DeployResult{}, err
 	}
-	if err := deployAndRecord(ctx, envName, env.PinFile, pins, sha, "deploy", ex, vf, led); err != nil {
+	if _, err := deployAndRecord(ctx, envName, env.PinFile, pins, sha, "deploy", ex, vf, led); err != nil {
 		return DeployResult{}, err
 	}
 	return DeployResult{Pins: pins, Deployed: true}, nil
@@ -175,9 +175,9 @@ func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor
 // records healthy "true"; a failing one records result "failed", healthy "false", and is
 // returned. With vf nil, healthy stays "unknown" (A2 behavior). A failed record is joined
 // in so the self-heal signal the next Sync reads is never lost.
-func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha, by string, ex executor.Executor, vf verify.Verifier, led ledger.Ledger) error {
+func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha, by string, ex executor.Executor, vf verify.Verifier, led ledger.Ledger) (verifyFailed bool, err error) {
 	if ex == nil {
-		return fmt.Errorf("no executor configured for environment %q", env)
+		return false, fmt.Errorf("no executor configured for environment %q", env)
 	}
 	_, deployErr := ex.Deploy(ctx, executor.Plan{Env: env, PinFile: pinFile, Pins: pins, Commit: sha})
 
@@ -206,18 +206,21 @@ func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha
 		By:          by,
 	})
 
+	// verifyFailed is true only when the deploy succeeded but the verify step failed.
+	verifyFailed = deployErr == nil && verifyErr != nil
+
 	actErr, verb := deployErr, "deploy"
 	if actErr == nil && verifyErr != nil {
 		actErr, verb = verifyErr, "verify"
 	}
 	if actErr != nil {
 		if recErr != nil {
-			return errors.Join(fmt.Errorf("%s %q: %w", verb, env, actErr),
+			return verifyFailed, errors.Join(fmt.Errorf("%s %q: %w", verb, env, actErr),
 				fmt.Errorf("record outcome: %w", recErr))
 		}
-		return fmt.Errorf("%s %q: %w", verb, env, actErr)
+		return verifyFailed, fmt.Errorf("%s %q: %w", verb, env, actErr)
 	}
-	return recErr
+	return false, recErr
 }
 
 // pinsEqual reports whether two pin sets hold exactly the same keys and values.
@@ -316,7 +319,7 @@ func Promote(ctx context.Context, cfg *config.Config, fromEnv, toEnv, sha string
 	if err != nil {
 		return PromoteResult{}, err
 	}
-	if err := deployAndRecord(ctx, toEnv, to.PinFile, pins, newSHA, "promote", ex, vf, led); err != nil {
+	if _, err := deployAndRecord(ctx, toEnv, to.PinFile, pins, newSHA, "promote", ex, vf, led); err != nil {
 		return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA}, err
 	}
 	return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA, Deployed: true}, nil
@@ -349,12 +352,16 @@ type RollbackResult struct {
 // ledger knows failed, and repeated rollbacks walk backward through good states instead of
 // oscillating onto the bad one. Immutable image tags keep the previous images addressable.
 func Rollback(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, vf verify.Verifier, store PinStore, led ledger.Ledger, opts RollbackOptions) (RollbackResult, error) {
+	return rollback(ctx, cfg, envName, ex, vf, store, led, opts, "rollback")
+}
+
+func rollback(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, vf verify.Verifier, store PinStore, led ledger.Ledger, opts RollbackOptions, by string) (RollbackResult, error) {
 	env, ok := cfg.Environment(envName)
 	if !ok {
 		return RollbackResult{}, fmt.Errorf("environment %q not found", envName)
 	}
 	if se, ok := ex.(executor.SlotExecutor); ok {
-		return slotRollback(ctx, envName, env.PinFile, se, store, led, opts)
+		return slotRollback(ctx, envName, env.PinFile, se, store, led, opts, by)
 	}
 	last, err := store.LatestCommit(env.PinFile)
 	if errors.Is(err, ErrNoHistory) {
@@ -393,7 +400,7 @@ func Rollback(ctx context.Context, cfg *config.Config, envName string, ex execut
 	if err != nil {
 		return RollbackResult{ToSHA: target, Pins: pins}, err
 	}
-	if err := deployAndRecord(ctx, envName, env.PinFile, pins, newSHA, "rollback", ex, vf, led); err != nil {
+	if _, err := deployAndRecord(ctx, envName, env.PinFile, pins, newSHA, by, ex, vf, led); err != nil {
 		return RollbackResult{ToSHA: target, Pins: pins, Committed: newSHA}, err
 	}
 	return RollbackResult{ToSHA: target, Pins: pins, Committed: newSHA, Deployed: true}, nil
@@ -401,7 +408,7 @@ func Rollback(ctx context.Context, cfg *config.Config, envName string, ex execut
 
 // slotRollback rolls a blue-green environment back by flipping the pointer to the other
 // (previously-live) slot, which still runs the prior version.
-func slotRollback(ctx context.Context, envName, pinFile string, se executor.SlotExecutor, store PinStore, led ledger.Ledger, opts RollbackOptions) (RollbackResult, error) {
+func slotRollback(ctx context.Context, envName, pinFile string, se executor.SlotExecutor, store PinStore, led ledger.Ledger, opts RollbackOptions, by string) (RollbackResult, error) {
 	live, err := se.LiveSlot(ctx)
 	if err != nil {
 		return RollbackResult{}, err
@@ -427,7 +434,7 @@ func slotRollback(ctx context.Context, envName, pinFile string, se executor.Slot
 		Result:      "ok",
 		Healthy:     "unknown", // a pointer flip does not verify service health
 		DeployedAt:  time.Now(),
-		By:          "rollback",
+		By:          by,
 	}
 	if err := led.Record(rec); err != nil {
 		return RollbackResult{Slot: target, Deployed: true}, err
