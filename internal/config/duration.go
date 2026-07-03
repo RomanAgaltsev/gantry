@@ -31,6 +31,12 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
+// Duration returns the wrapped time.Duration.
+func (d Duration) Duration() time.Duration { return time.Duration(d) }
+
+// DurationOf wraps a time.Duration as a config Duration.
+func DurationOf(d time.Duration) Duration { return Duration(d) }
+
 func parseDuration(s string) (time.Duration, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {

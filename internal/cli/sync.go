@@ -120,6 +120,14 @@ func buildExecAndVerify(res config.SecretResolver, cfg *config.Config, env *conf
 	return ex, buildVerifiers(env.Verify, runner, ex), nil
 }
 
+// execFor returns a factory that builds the executor + verifier for one environment,
+// resolving secrets with res. Shared by the CLI verbs (via buildDeps) and the daemon.
+func execFor(res config.SecretResolver, cfg *config.Config) func(config.Environment) (executor.Executor, verify.Verifier, error) {
+	return func(env config.Environment) (executor.Executor, verify.Verifier, error) {
+		return buildExecAndVerify(res, cfg, &env, true)
+	}
+}
+
 // resolveLogins resolves each registry's credentials for the executor to log in with.
 func resolveLogins(res config.SecretResolver, registries map[string]config.Registry) ([]composessh.RegistryLogin, error) {
 	var logins []composessh.RegistryLogin
@@ -144,6 +152,9 @@ func newSyncCmd() *cobra.Command {
 		Use:   "sync",
 		Short: "Consume releases, pin, and deploy an environment",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := guardServe(cmd); err != nil {
+				return err
+			}
 			d, err := buildDeps(cmd, envName, true, !dryRun)
 			if err != nil {
 				return err
