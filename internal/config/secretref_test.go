@@ -61,3 +61,15 @@ func TestResolve_Empty(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "", v)
 }
+
+func TestResolve_RegistryDispatch(t *testing.T) {
+	Register("fake", func(_ SecretResolver, arg string) (string, error) { return "got:" + arg, nil })
+	got, err := DefaultResolver().Resolve(SecretRef{Raw: "${fake:xyz}"})
+	require.NoError(t, err)
+	require.Equal(t, "got:xyz", got)
+}
+
+func TestResolve_UnknownSchemeStillErrors(t *testing.T) {
+	_, err := DefaultResolver().Resolve(SecretRef{Raw: "${nope:x}"})
+	require.ErrorContains(t, err, "unknown secret scheme")
+}
