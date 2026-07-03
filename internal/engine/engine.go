@@ -243,7 +243,13 @@ func deployVerifyRecover(ctx context.Context, cfg *config.Config, envName, pinFi
 	}
 	env, ok := cfg.Environment(envName)
 	if !verifyFailed || !ok || !env.RollbackOnVerifyFailure() {
-		return "", verifyFailed, err // hold (or a non-verify failure)
+		return "", verifyFailed, err
+	}
+	// A blue-green deploy only stages the idle slot; the live slot is untouched, so a failed
+	// idle verify must hold. Auto-rollback would flip the pointer to the bad idle slot; the
+	// pre-switch verify gate (engine.Switch) is the blue-green safety mechanism instead.
+	if _, isSlot := ex.(executor.SlotExecutor); isSlot {
+		return "", verifyFailed, err
 	}
 	rb, rbErr := rollback(ctx, cfg, envName, ex, vf, store, led, RollbackOptions{}, "auto-rollback")
 	if rbErr != nil {
