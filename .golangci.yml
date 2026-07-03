@@ -116,6 +116,7 @@ linters:
             - "golang.org/x/crypto"
             - "gopkg.in/yaml.v3"
             - "github.com/stretchr/testify"
+            - "github.com/prometheus/client_golang"
 
     revive:
       severity: warning
