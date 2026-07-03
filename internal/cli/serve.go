@@ -72,6 +72,9 @@ func runServe(cmd *cobra.Command, interval string) error {
 		return err
 	}
 
+	obs, metricsHandler := daemon.NewPrometheusObserver(Version)
+	deps.Metrics = obs
+
 	if err := os.MkdirAll(filepath.Dir(lockPath(path)), 0o750); err != nil {
 		return err
 	}
@@ -90,7 +93,7 @@ func runServe(cmd *cobra.Command, interval string) error {
 
 	srv := &http.Server{
 		Addr:              cfg.Daemon.Listen,
-		Handler:           serveMux(),
+		Handler:           buildServeMux(metricsHandler, nil),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
@@ -140,12 +143,19 @@ func serveDeps(cfg *config.Config, path string, res config.SecretResolver) (*dae
 	}, nil
 }
 
-// serveMux builds the HTTP mux for the daemon. C3a exposes only /healthz; C3b/C3c register
-// Prometheus metrics and the doorbell onto this same mux.
-func serveMux() *http.ServeMux {
+// serveMux builds the HTTP mux for the daemon. /healthz is always registered; /metrics is
+// registered when metrics != nil (C3b); the doorbell handler is registered when non-nil
+// (C3c). The handler is nil-safe so C3c can add its route without touching this helper.
+func buildServeMux(metrics, doorbell http.Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok")) //nolint:gosec // a fixed "ok" body; a write failure is not actionable
 	})
+	if metrics != nil {
+		mux.Handle("/metrics", metrics)
+	}
+	if doorbell != nil {
+		mux.Handle("/hooks/forge", doorbell)
+	}
 	return mux
 }
