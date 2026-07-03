@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -59,6 +60,32 @@ func execRunner(ctx context.Context, env []string, name string, args ...string) 
 	return out, nil
 }
 
+// runnerTimeout bounds a runner-backed scheme so a hung sops/vault/cmd cannot wedge a
+// gantry command or a daemon reconcile.
+const runnerTimeout = 30 * time.Second
+
+// run runs name with args under a bounded context with no extra env (used by cmd/sops).
+func (r SecretResolver) run(name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), runnerTimeout)
+	defer cancel()
+	return r.Runner(ctx, nil, name, args...)
+}
+
+// resolveCmd runs a command and returns its trimmed stdout as the secret. The arg is split
+// on whitespace: "${cmd:prog a b}" runs prog with args [a b]. Commands needing shell quoting
+// should be wrapped in a script.
+func resolveCmd(r SecretResolver, arg string) (string, error) {
+	fields := strings.Fields(arg)
+	if len(fields) == 0 {
+		return "", errors.New("cmd secret: empty command")
+	}
+	out, err := r.run(fields[0], fields[1:]...)
+	if err != nil {
+		return "", fmt.Errorf("cmd secret %q: %w", fields[0], err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // SchemeFunc resolves the arg of a ${scheme:arg} ref. res is passed so a backend can compose
 // other schemes (e.g. vault resolving its own token) and so tests can inject fakes.
 type SchemeFunc func(res SecretResolver, arg string) (string, error)
@@ -68,6 +95,7 @@ type SchemeFunc func(res SecretResolver, arg string) (string, error)
 var schemes = map[string]SchemeFunc{
 	"env":  resolveEnv,
 	"file": resolveFile,
+	"cmd":  resolveCmd,
 }
 
 // Register adds or overrides a secret scheme. Intended for tests and future backends
