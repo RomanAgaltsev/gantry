@@ -94,6 +94,25 @@ gantry deploy --env test --config examples/demo/gantry.yaml
 Unlike `sync`, `deploy` does not consult the forge or write the pin file; it just
 deploys what is already committed.
 
+## Secrets beyond env/file
+
+The demo resolves its forge token from `${env:GANTRY_FORGE_TOKEN}` and its SSH key/known_hosts
+from `${file:…}` paths. Those two schemes are built in; gantry also supports `${cmd:…}`
+(shell out to a tool like `op`/`pass`), `${sops:file#key}` (Mozilla SOPS), and
+`${vault:path#field}` (HashiCorp Vault) — useful when credentials live in a secret store
+rather than a plain env var or file. For example, a registry password from SOPS:
+
+```yaml
+registries:
+  registry.example.com:
+    user: ${cmd:op read op://vault/reg/user}
+    password: ${sops:secrets.enc.yaml#reg.password}
+```
+
+These shell out to the `cmd`/`sops`/`vault` binaries, which must be installed on the host
+(the default distroless image ships only `env`/`file`/`cmd`). See
+[../../docs/secrets.md](../../docs/secrets.md) for the full scheme reference.
+
 ## Verifying deploys
 
 Both environments carry a `verify:` block, so after a deploy gantry runs health probes

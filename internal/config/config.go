@@ -23,6 +23,7 @@ type Config struct {
 	Promote       PromoteConfig         `yaml:"promote"`
 	Notifications []NotifyChannel       `yaml:"notifications"`
 	Daemon        DaemonConfig          `yaml:"daemon"`
+	Secrets       SecretsConfig         `yaml:"secrets"`
 }
 
 // PromoteConfig tunes the promotion gate. Optional; require_healthy defaults false so
@@ -177,6 +178,18 @@ type Doorbell struct {
 	Secret  SecretRef `yaml:"secret"` // required when Enabled; authenticates the webhook
 }
 
+// SecretsConfig holds backend-wide secret settings (currently just Vault). Optional.
+type SecretsConfig struct {
+	Vault VaultRefs `yaml:"vault"`
+}
+
+// VaultRefs are the ambient Vault address and token, each a SecretRef so they can come from
+// env or a file. Both default to the standard VAULT_ADDR/VAULT_TOKEN env vars.
+type VaultRefs struct {
+	Address SecretRef `yaml:"address"`
+	Token   SecretRef `yaml:"token"`
+}
+
 // Environment returns the named environment.
 func (c *Config) Environment(name string) (*Environment, bool) {
 	for i := range c.Environments {
@@ -227,6 +240,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	c.defaultDaemon()
+	c.defaultSecrets()
 
 	if err := c.validate(); err != nil {
 		return nil, err
@@ -408,6 +422,17 @@ func (c *Config) defaultDaemon() {
 	}
 	if c.Daemon.Doorbell.Path == "" {
 		c.Daemon.Doorbell.Path = "/hooks/forge"
+	}
+}
+
+// defaultSecrets defaults the ambient Vault address/token to the standard env vars so a
+// ${vault:…} ref works without an explicit secrets.vault block.
+func (c *Config) defaultSecrets() {
+	if c.Secrets.Vault.Address.Raw == "" {
+		c.Secrets.Vault.Address = SecretRef{Raw: "${env:VAULT_ADDR}"}
+	}
+	if c.Secrets.Vault.Token.Raw == "" {
+		c.Secrets.Vault.Token = SecretRef{Raw: "${env:VAULT_TOKEN}"}
 	}
 }
 
