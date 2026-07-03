@@ -127,7 +127,25 @@ gantry drift --all --config examples/demo/gantry.yaml
 drifted, so a scheduled `gantry drift --all` turns an un-consumed release into a red
 build. Only track-mode environments are scanned, and explicit-pin components
 (`postgres`) are skipped — gantry has no notion of their "latest". See
-[../../docs/drift.md](../../docs/drift.md) for the full model.
+See [../../docs/drift.md](../../docs/drift.md) for the full model.
+
+## Run it continuously
+
+`gantry serve` runs the reconcile loop as a long-lived process — it runs `sync`
+on an interval for you, under a single-writer lock, so a track-mode environment
+stays pinned to the latest releases without a CI schedule:
+
+```bash
+# Reconcile `test` every 60s (the default interval) until interrupted
+gantry serve --config examples/demo/gantry.yaml
+
+# Reconcile faster while developing
+gantry serve --interval 15s --config examples/demo/gantry.yaml
+```
+
+`/healthz` is served on `:9713`; stop it with `Ctrl-C` or `SIGTERM`. While the
+daemon runs, the mutating verbs (`sync`, `deploy`, `promote`, …) refuse to act.
+See [../../docs/daemon.md](../../docs/daemon.md).
 
 ## Adapting it
 
