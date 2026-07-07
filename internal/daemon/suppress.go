@@ -56,13 +56,13 @@ func (s *failureSuppressor) filter(env string, evs []notify.Event, failed bool, 
 	emit, recovered := s.ShouldNotify(env, failed, now)
 	out := make([]notify.Event, 0, len(evs))
 	for _, e := range evs {
-		if e.Kind == "reconcile_failed" && !emit {
+		if e.Kind == notify.KindReconcileFailed && !emit {
 			continue
 		}
 		out = append(out, e)
 	}
 	if recovered {
-		out = append(out, notify.Event{Kind: "deployed", Environment: env, Time: now, Message: "recovered: reconcile succeeded after prior failures"})
+		out = append(out, notify.Event{Kind: notify.KindDeployed, Environment: env, Time: now, Message: "recovered: reconcile succeeded after prior failures"})
 	}
 	return out
 }

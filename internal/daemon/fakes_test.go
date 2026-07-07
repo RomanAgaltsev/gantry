@@ -68,35 +68,35 @@ type fakeStore struct {
 
 func newFakeStore() *fakeStore { return &fakeStore{} }
 
-func (s *fakeStore) Read(string) (pin.Set, error)           { return s.cur, nil }
-func (s *fakeStore) ReadAt(string, string) (pin.Set, error) { return pin.Set{}, nil }
-func (s *fakeStore) WriteAndCommit(_ string, set pin.Set, _ string) (string, error) {
+func (s *fakeStore) Read(context.Context, string) (pin.Set, error)           { return s.cur, nil }
+func (s *fakeStore) ReadAt(context.Context, string, string) (pin.Set, error) { return pin.Set{}, nil }
+func (s *fakeStore) WriteAndCommit(_ context.Context, _ string, set pin.Set, _ string) (string, error) {
 	s.committed = set
 	s.headSHA = "newsha"
 	return "newsha", nil
 }
 
-func (s *fakeStore) LatestCommit(string) (string, error) {
+func (s *fakeStore) LatestCommit(context.Context, string) (string, error) {
 	if s.headSHA == "" {
 		return "", engine.ErrNoHistory
 	}
 	return s.headSHA, nil
 }
 
-func (s *fakeStore) ParentOf(string) (string, error)    { return "", engine.ErrNoParent }
-func (s *fakeStore) Resolve(rev string) (string, error) { return rev, nil }
+func (s *fakeStore) ParentOf(context.Context, string) (string, error)      { return "", engine.ErrNoParent }
+func (s *fakeStore) Resolve(_ context.Context, rev string) (string, error) { return rev, nil }
 
 // fakeLedger is an in-memory ledger.Ledger (latest-wins lookups, append-only records).
 type fakeLedger struct{ entries []ledger.Entry }
 
 func newFakeLedger() *fakeLedger { return &fakeLedger{} }
 
-func (l *fakeLedger) Record(e ledger.Entry) error {
+func (l *fakeLedger) Record(_ context.Context, e ledger.Entry) error {
 	l.entries = append(l.entries, e)
 	return nil
 }
 
-func (l *fakeLedger) Lookup(env, sha string) (ledger.Entry, bool, error) {
+func (l *fakeLedger) Lookup(_ context.Context, env, sha string) (ledger.Entry, bool, error) {
 	for i := len(l.entries) - 1; i >= 0; i-- {
 		if l.entries[i].Environment == env && l.entries[i].PinCommit == sha {
 			return l.entries[i], true, nil
@@ -105,16 +105,16 @@ func (l *fakeLedger) Lookup(env, sha string) (ledger.Entry, bool, error) {
 	return ledger.Entry{}, false, nil
 }
 
-func (l *fakeLedger) LatestGreen(env string) (ledger.Entry, error) {
+func (l *fakeLedger) LatestGreen(_ context.Context, env string) (ledger.Entry, error) {
 	for i := len(l.entries) - 1; i >= 0; i-- {
-		if l.entries[i].Environment == env && l.entries[i].Result == "ok" {
+		if l.entries[i].Environment == env && l.entries[i].Result == ledger.ResultOK {
 			return l.entries[i], nil
 		}
 	}
 	return ledger.Entry{}, ledger.ErrNoGreen
 }
 
-func (l *fakeLedger) History(env string) ([]ledger.Entry, error) {
+func (l *fakeLedger) History(_ context.Context, env string) ([]ledger.Entry, error) {
 	var out []ledger.Entry
 	for i := len(l.entries) - 1; i >= 0; i-- {
 		if l.entries[i].Environment == env {
@@ -124,9 +124,9 @@ func (l *fakeLedger) History(env string) ([]ledger.Entry, error) {
 	return out, nil
 }
 
-func (l *fakeLedger) LatestHealthy(env string) (ledger.Entry, error) {
+func (l *fakeLedger) LatestHealthy(_ context.Context, env string) (ledger.Entry, error) {
 	for i := len(l.entries) - 1; i >= 0; i-- {
-		if l.entries[i].Environment == env && l.entries[i].Result == "ok" && l.entries[i].Healthy == "true" {
+		if l.entries[i].Environment == env && l.entries[i].Result == ledger.ResultOK && l.entries[i].Healthy == ledger.HealthTrue {
 			return l.entries[i], nil
 		}
 	}

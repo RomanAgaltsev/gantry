@@ -11,6 +11,17 @@ import (
 
 const defaultChannelTimeout = 10 * time.Second
 
+// Event kinds gantry can emit. The config validator and the event constructors reference
+// these so a new kind is added in exactly one place.
+const (
+	KindDeployed        = "deployed"
+	KindPromoted        = "promoted"
+	KindRolledBack      = "rolled_back"
+	KindVerifyFailed    = "verify_failed"
+	KindDriftAlarm      = "drift_alarm"
+	KindReconcileFailed = "reconcile_failed"
+)
+
 // Event is one thing gantry did (or failed to do) worth reporting. Message is the rendered
 // single line; the other fields populate structured payloads (e.g. the webhook JSON).
 type Event struct {

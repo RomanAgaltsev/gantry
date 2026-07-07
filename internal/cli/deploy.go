@@ -2,8 +2,6 @@ package cli
 
 import (
 	"github.com/spf13/cobra"
-
-	"github.com/RomanAgaltsev/gantry/internal/engine"
 )
 
 func newDeployCmd() *cobra.Command {
@@ -21,7 +19,7 @@ func newDeployCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := engine.Deploy(cmd.Context(), d.cfg, d.env, d.exec, d.verify, d.store, d.ledger)
+			res, err := d.engine.Deploy(cmd.Context(), d.env, d.exec, d.verify)
 			d.notifier.Dispatch(cmd.Context(), deployEvents(envName, res, err)...)
 			if err != nil {
 				if note := autoRollbackNote(envName, res.RolledBackTo); note != "" {

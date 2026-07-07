@@ -2,6 +2,7 @@ package ledger
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,7 +38,8 @@ func NewGitLedger(repoDir string, author object.Signature) (Ledger, error) {
 func (l *gitLedger) abs() string { return filepath.Join(l.repoDir, filepath.FromSlash(ledgerRelPath)) }
 
 // Record appends one JSON line to the ledger file and commits it.
-func (l *gitLedger) Record(e Entry) error {
+// ctx is accepted for seam symmetry; the local git impl is synchronous and does not observe it.
+func (l *gitLedger) Record(_ context.Context, e Entry) error {
 	wt, err := l.repo.Worktree()
 	if err != nil {
 		return err
@@ -100,7 +102,7 @@ func (l *gitLedger) all() ([]Entry, error) {
 	return out, sc.Err()
 }
 
-func (l *gitLedger) Lookup(env, sha string) (Entry, bool, error) {
+func (l *gitLedger) Lookup(_ context.Context, env, sha string) (Entry, bool, error) {
 	entries, err := l.all()
 	if err != nil {
 		return Entry{}, false, err
@@ -109,7 +111,7 @@ func (l *gitLedger) Lookup(env, sha string) (Entry, bool, error) {
 	return e, ok, nil
 }
 
-func (l *gitLedger) LatestGreen(env string) (Entry, error) {
+func (l *gitLedger) LatestGreen(_ context.Context, env string) (Entry, error) {
 	entries, err := l.all()
 	if err != nil {
 		return Entry{}, err
@@ -121,7 +123,7 @@ func (l *gitLedger) LatestGreen(env string) (Entry, error) {
 	return e, nil
 }
 
-func (l *gitLedger) History(env string) ([]Entry, error) {
+func (l *gitLedger) History(_ context.Context, env string) ([]Entry, error) {
 	entries, err := l.all()
 	if err != nil {
 		return nil, err
@@ -129,7 +131,7 @@ func (l *gitLedger) History(env string) ([]Entry, error) {
 	return history(entries, env), nil
 }
 
-func (l *gitLedger) LatestHealthy(env string) (Entry, error) {
+func (l *gitLedger) LatestHealthy(_ context.Context, env string) (Entry, error) {
 	entries, err := l.all()
 	if err != nil {
 		return Entry{}, err

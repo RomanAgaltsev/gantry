@@ -28,7 +28,7 @@ func TestBuildNotifier_WebhookDispatches(t *testing.T) {
 			return "", false
 		},
 	}
-	d, err := buildNotifier(res, []config.NotifyChannel{
+	d, err := buildNotifier(context.Background(), res, []config.NotifyChannel{
 		{Kind: "webhook", URL: config.SecretRef{Raw: "${env:HOOK}"}, Events: []string{"deployed"}},
 	})
 	require.NoError(t, err)

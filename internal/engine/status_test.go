@@ -38,7 +38,7 @@ func TestStatusMatrix_GridDriftHealth(t *testing.T) {
 		{Environment: "test", Result: "ok", Healthy: "true", DeployedAt: fixed.Add(-2 * time.Hour)},
 	}}
 
-	m, err := StatusMatrix(context.Background(), cfg, f, store, led)
+	m, err := (&Engine{Cfg: cfg, Forge: f, Store: store, Ledger: led}).StatusMatrix(context.Background())
 	require.NoError(t, err)
 
 	require.Equal(t, []string{"SVC_IMAGE", "PG_IMAGE"}, m.Components)
@@ -73,7 +73,7 @@ func TestStatusMatrix_DegradesPerCellOnForgeError(t *testing.T) {
 		Environments: []config.Environment{{Name: "test", Source: config.Source{Track: "latest"}, PinFile: "f"}},
 	}
 	store := &fakeStore{byFile: map[string]pin.Set{"f": {"SVC_IMAGE": "reg/svc:v1", "PG_IMAGE": "reg/pg:v9"}}}
-	m, err := StatusMatrix(context.Background(), cfg, perIDErrForge{failID: "svc", rel: ok}, store, &fakeLedger{})
+	m, err := (&Engine{Cfg: cfg, Forge: perIDErrForge{failID: "svc", rel: ok}, Store: store, Ledger: &fakeLedger{}}).StatusMatrix(context.Background())
 	require.NoError(t, err, "one bad component must not fail the whole matrix (C5)")
 	require.Equal(t, "(error)", m.Latest["SVC_IMAGE"], "failing cell degrades to the (error) sentinel")
 	require.Equal(t, ok.ImageRef(), m.Latest["PG_IMAGE"], "healthy component still resolves")

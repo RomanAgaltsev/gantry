@@ -22,7 +22,7 @@ func newPruneCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := engine.Prune(cmd.Context(), d.cfg, d.env, d.exec, d.verify, d.store, d.ledger, engine.PruneOptions{DryRun: dryRun})
+			res, err := d.engine.Prune(cmd.Context(), d.env, d.exec, d.verify, engine.PruneOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}

@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/RomanAgaltsev/gantry/internal/config"
 )
 
 type recordingNotifier struct {
@@ -42,4 +44,17 @@ func TestDispatch_BestEffort(t *testing.T) {
 	// Must not panic or stop at the failing channel, and returns nothing.
 	d.Dispatch(context.Background(), Event{Kind: "deployed"})
 	require.Len(t, ok.got, 1) // the second channel still received it
+}
+
+// TestEventKindsMatchConfigValidation guards the single-source-of-truth contract between the
+// notify.Kind* string constants and config.NotifyEventKinds (review §2.2-B): a kind emitted by
+// any event constructor must be accepted by config validation, and vice versa.
+func TestEventKindsMatchConfigValidation(t *testing.T) {
+	for _, k := range []string{
+		KindDeployed, KindPromoted, KindRolledBack,
+		KindVerifyFailed, KindDriftAlarm, KindReconcileFailed,
+	} {
+		require.True(t, config.NotifyEventKinds[k], "config validation must accept kind %q", k)
+	}
+	require.Len(t, config.NotifyEventKinds, 6)
 }

@@ -15,13 +15,13 @@ func verifyFailureEvents(env string, verifyFailed, autoRolledBack bool, rolledBa
 	var evs []notify.Event
 	if verifyFailed {
 		evs = append(evs, notify.Event{
-			Kind: "verify_failed", Environment: env, Time: time.Now(),
+			Kind: notify.KindVerifyFailed, Environment: env, Time: time.Now(),
 			Message: "verify failed for " + env,
 		})
 	}
 	if autoRolledBack {
 		evs = append(evs, notify.Event{
-			Kind: "rolled_back", Environment: env, Commit: rolledBackTo, By: "auto-rollback", Time: time.Now(),
+			Kind: notify.KindRolledBack, Environment: env, Commit: rolledBackTo, By: "auto-rollback", Time: time.Now(),
 			Message: fmt.Sprintf("rolled back %s to %.7s", env, rolledBackTo),
 		})
 	}
@@ -36,7 +36,7 @@ func deployEvents(env string, res engine.DeployResult, err error) []notify.Event
 		return nil
 	}
 	return []notify.Event{{
-		Kind: "deployed", Environment: env, By: "deploy", Time: time.Now(),
+		Kind: notify.KindDeployed, Environment: env, By: "deploy", Time: time.Now(),
 		Message: fmt.Sprintf("deployed %d pin(s) to %s", len(res.Pins), env),
 	}}
 }
@@ -52,7 +52,7 @@ func syncEvents(env string, res engine.SyncResult, err error) []notify.Event {
 	if res.Recovered {
 		msg = "redeployed the last committed pin set to " + env
 	}
-	return []notify.Event{{Kind: "deployed", Environment: env, By: "sync", Time: time.Now(), Message: msg}}
+	return []notify.Event{{Kind: notify.KindDeployed, Environment: env, By: "sync", Time: time.Now(), Message: msg}}
 }
 
 func promoteEvents(from, to string, res engine.PromoteResult, err error) []notify.Event {
@@ -63,7 +63,7 @@ func promoteEvents(from, to string, res engine.PromoteResult, err error) []notif
 		return nil
 	}
 	return []notify.Event{{
-		Kind: "promoted", Environment: to, Commit: res.Committed, By: "promote", Time: time.Now(),
+		Kind: notify.KindPromoted, Environment: to, Commit: res.Committed, By: "promote", Time: time.Now(),
 		Message: fmt.Sprintf("promoted %s@%.7s -> %s (%d pins)", from, res.FromSHA, to, len(res.Pins)),
 	}}
 }
@@ -76,14 +76,14 @@ func rollbackEvents(env string, res engine.RollbackResult, err error) []notify.E
 	if res.Slot != "" {
 		msg = fmt.Sprintf("rolled back %s by switching to %s", env, res.Slot)
 	}
-	return []notify.Event{{Kind: "rolled_back", Environment: env, Commit: res.ToSHA, By: "rollback", Time: time.Now(), Message: msg}}
+	return []notify.Event{{Kind: notify.KindRolledBack, Environment: env, Commit: res.ToSHA, By: "rollback", Time: time.Now(), Message: msg}}
 }
 
 func driftEvents(rep engine.DriftReport) []notify.Event {
 	evs := make([]notify.Event, 0, len(rep.Items))
 	for _, it := range rep.Items {
 		evs = append(evs, notify.Event{
-			Kind: "drift_alarm", Environment: it.Env, Time: time.Now(),
+			Kind: notify.KindDriftAlarm, Environment: it.Env, Time: time.Now(),
 			Message: fmt.Sprintf("drift: %s in %s is %s behind latest (%s)",
 				it.Component, it.Env, humanize.Duration(it.Age), it.Latest.SemverVersion),
 		})

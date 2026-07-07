@@ -71,7 +71,14 @@ installed or resolve those secrets in CI before invoking gantry. A runner call i
 
 ## Extending it
 
-The scheme set is a registry: `config.Register("scheme", fn)` adds or overrides a backend
-(`fn` is `func(res SecretResolver, arg string) (string, error)`), so a future
-`${vaultlite:…}` (an in-process Vault client, no CLI) is a one-function addition behind the
-same seam.
+The built-in scheme set (`env`, `file`, `cmd`, `sops`, `vault`) is fixed and immutable.
+A resolver carries its own per-instance overrides via `WithScheme`, which returns a copy with
+the scheme added (no shared mutable state):
+
+```go
+res := config.DefaultResolver().WithScheme("vaultlite", func(ctx context.Context, r config.SecretResolver, arg string) (string, error) {
+    // an in-process Vault client, no CLI
+})
+```
+
+So a future `${vaultlite:…}` backend is a one-function addition behind the same seam.

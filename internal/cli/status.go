@@ -43,7 +43,7 @@ func runStatusAll(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	m, err := engine.StatusMatrix(cmd.Context(), d.cfg, d.forge, d.store, d.ledger)
+	m, err := d.engine.StatusMatrix(cmd.Context())
 	if err != nil {
 		return err
 	}
@@ -58,12 +58,12 @@ func runStatusEnv(cmd *cobra.Command, envName string) error {
 		return err
 	}
 	env, _ := d.cfg.Environment(d.env)
-	current, err := d.store.Read(env.PinFile)
+	current, err := d.engine.Store.Read(cmd.Context(), env.PinFile)
 	if err != nil {
 		return err
 	}
 	for _, comp := range d.cfg.Components {
-		cmd.Println(componentStatusLine(cmd.Context(), comp, current, d.forge))
+		cmd.Println(componentStatusLine(cmd.Context(), comp, current, d.engine.Forge))
 	}
 	return nil
 }
