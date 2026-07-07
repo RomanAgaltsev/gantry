@@ -103,7 +103,7 @@ func StatusMatrix(ctx context.Context, cfg *config.Config, f forge.Forge, store 
 		h := EnvHealth{Env: env.Name}
 		if len(hist) > 0 {
 			e := hist[0] // newest first
-			h.Result, h.Healthy, h.Age, h.HasData = e.Result, e.Healthy, now.Sub(e.DeployedAt), true
+			h.Result, h.Healthy, h.Age, h.HasData = string(e.Result), string(e.Healthy), now.Sub(e.DeployedAt), true
 		}
 		m.Health = append(m.Health, h)
 	}

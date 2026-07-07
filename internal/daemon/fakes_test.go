@@ -107,7 +107,7 @@ func (l *fakeLedger) Lookup(env, sha string) (ledger.Entry, bool, error) {
 
 func (l *fakeLedger) LatestGreen(env string) (ledger.Entry, error) {
 	for i := len(l.entries) - 1; i >= 0; i-- {
-		if l.entries[i].Environment == env && l.entries[i].Result == "ok" {
+		if l.entries[i].Environment == env && l.entries[i].Result == ledger.ResultOK {
 			return l.entries[i], nil
 		}
 	}
@@ -126,7 +126,7 @@ func (l *fakeLedger) History(env string) ([]ledger.Entry, error) {
 
 func (l *fakeLedger) LatestHealthy(env string) (ledger.Entry, error) {
 	for i := len(l.entries) - 1; i >= 0; i-- {
-		if l.entries[i].Environment == env && l.entries[i].Result == "ok" && l.entries[i].Healthy == "true" {
+		if l.entries[i].Environment == env && l.entries[i].Result == ledger.ResultOK && l.entries[i].Healthy == ledger.HealthTrue {
 			return l.entries[i], nil
 		}
 	}

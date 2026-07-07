@@ -29,7 +29,7 @@ func TestGitLedger_RecordThenQuery(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, l.Record(Entry{
-		Environment: "test", PinCommit: "aaa", Result: "ok", Healthy: "unknown",
+		Environment: "test", PinCommit: "aaa", Result: ResultOK, Healthy: HealthUnknown,
 		ImageSet: map[string]string{"SVC_IMAGE": "reg/svc:v1"}, DeployedAt: time.Now(), By: "sync",
 	}))
 
@@ -43,7 +43,7 @@ func TestGitLedger_RecordThenQuery(t *testing.T) {
 	got, ok, err := l.Lookup("test", "aaa")
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Equal(t, "ok", got.Result)
+	require.Equal(t, ResultOK, got.Result)
 	require.Equal(t, "reg/svc:v1", got.ImageSet["SVC_IMAGE"])
 
 	green, err := l.LatestGreen("test")
@@ -55,7 +55,7 @@ func TestGitLedger_Record_RefusesPreStagedFile(t *testing.T) {
 	dir := newRepo(t)
 	l, err := NewGitLedger(dir, sig())
 	require.NoError(t, err)
-	require.NoError(t, l.Record(Entry{Environment: "test", PinCommit: "aaa", Result: "ok", By: "sync"}))
+	require.NoError(t, l.Record(Entry{Environment: "test", PinCommit: "aaa", Result: ResultOK, By: "sync"}))
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "user.txt"), []byte("x"), 0o600))
 	repo, err := git.PlainOpen(dir)
@@ -65,28 +65,28 @@ func TestGitLedger_Record_RefusesPreStagedFile(t *testing.T) {
 	_, err = wt.Add("user.txt")
 	require.NoError(t, err)
 
-	err = l.Record(Entry{Environment: "test", PinCommit: "bbb", Result: "ok", By: "sync"})
+	err = l.Record(Entry{Environment: "test", PinCommit: "bbb", Result: ResultOK, By: "sync"})
 	require.ErrorContains(t, err, "user.txt")
 }
 
 func TestGitLedger_LatestGreen_None(t *testing.T) {
 	dir := newRepo(t)
 	l, _ := NewGitLedger(dir, sig())
-	require.NoError(t, l.Record(Entry{Environment: "test", PinCommit: "aaa", Result: "failed", By: "sync"}))
+	require.NoError(t, l.Record(Entry{Environment: "test", PinCommit: "aaa", Result: ResultFailed, By: "sync"}))
 	_, err := l.LatestGreen("test")
 	require.ErrorIs(t, err, ErrNoGreen)
 }
 
 func TestLatestHealthy(t *testing.T) {
 	entries := []Entry{
-		{Environment: "test", PinCommit: "a", Result: "ok", Healthy: "true"},
-		{Environment: "test", PinCommit: "b", Result: "ok", Healthy: "unknown"},
-		{Environment: "test", PinCommit: "c", Result: "failed", Healthy: "false"},
+		{Environment: "test", PinCommit: "a", Result: ResultOK, Healthy: HealthTrue},
+		{Environment: "test", PinCommit: "b", Result: ResultOK, Healthy: HealthUnknown},
+		{Environment: "test", PinCommit: "c", Result: ResultFailed, Healthy: HealthFalse},
 	}
 	e, ok := latestHealthy(entries, "test")
 	require.True(t, ok)
 	require.Equal(t, "a", e.PinCommit) // newest ok+healthy, skipping unknown and failed
 
-	_, ok = latestHealthy([]Entry{{Environment: "test", Result: "ok", Healthy: "unknown"}}, "test")
+	_, ok = latestHealthy([]Entry{{Environment: "test", Result: ResultOK, Healthy: HealthUnknown}}, "test")
 	require.False(t, ok)
 }

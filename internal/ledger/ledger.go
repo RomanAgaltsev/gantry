@@ -11,12 +11,30 @@ import (
 // ErrNoGreen is returned by LatestGreen when an environment has no ok deploy record.
 var ErrNoGreen = errors.New("no green deploy recorded")
 
+// Result is a deploy outcome as recorded in the ledger. Declared as a string type so the
+// compiler checks comparisons while the on-disk JSONL wire format stays the literal strings.
+type Result string
+
+const (
+	ResultOK     Result = "ok"
+	ResultFailed Result = "failed"
+)
+
+// Health is a post-deploy verification verdict. "unknown" means no verify ran (A2 behavior).
+type Health string
+
+const (
+	HealthUnknown Health = "unknown"
+	HealthTrue    Health = "true"
+	HealthFalse   Health = "false"
+)
+
 // Entry is one deploy outcome, append-only, keyed by (Environment, PinCommit).
 type Entry struct {
 	Environment string            `json:"environment"`
 	PinCommit   string            `json:"pin_commit"`
-	Result      string            `json:"result"`  // "ok" | "failed"
-	Healthy     string            `json:"healthy"` // "unknown" (A2) | "true" | "false" (B3)
+	Result      Result            `json:"result"`  // ResultOK | ResultFailed
+	Healthy     Health            `json:"healthy"` // HealthUnknown (A2) | HealthTrue | HealthFalse (B3)
 	ImageSet    map[string]string `json:"image_set"`
 	DeployedAt  time.Time         `json:"deployed_at"`
 	By          string            `json:"by"` // "sync" | "deploy" | "promote" | "rollback"
@@ -50,7 +68,7 @@ func lookup(entries []Entry, env, sha string) (Entry, bool) {
 // latestGreen returns the most recent ok entry for env.
 func latestGreen(entries []Entry, env string) (Entry, bool) {
 	for i := len(entries) - 1; i >= 0; i-- {
-		if entries[i].Environment == env && entries[i].Result == "ok" {
+		if entries[i].Environment == env && entries[i].Result == ResultOK {
 			return entries[i], true
 		}
 	}
@@ -60,7 +78,7 @@ func latestGreen(entries []Entry, env string) (Entry, bool) {
 // latestHealthy returns the most recent ok entry for env whose verification passed.
 func latestHealthy(entries []Entry, env string) (Entry, bool) {
 	for i := len(entries) - 1; i >= 0; i-- {
-		if entries[i].Environment == env && entries[i].Result == "ok" && entries[i].Healthy == "true" {
+		if entries[i].Environment == env && entries[i].Result == ResultOK && entries[i].Healthy == HealthTrue {
 			return entries[i], true
 		}
 	}

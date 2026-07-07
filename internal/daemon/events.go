@@ -14,15 +14,15 @@ func eventsFor(env string, res engine.SyncResult, err error) []notify.Event {
 	switch {
 	case err != nil && res.VerifyFailed && res.AutoRolledBack:
 		return []notify.Event{
-			{Kind: "verify_failed", Environment: env, Time: now, Message: "verify failed: " + err.Error()},
-			{Kind: "rolled_back", Environment: env, Commit: res.RolledBackTo, Time: now, By: "auto-rollback"},
+			{Kind: notify.KindVerifyFailed, Environment: env, Time: now, Message: "verify failed: " + err.Error()},
+			{Kind: notify.KindRolledBack, Environment: env, Commit: res.RolledBackTo, Time: now, By: "auto-rollback"},
 		}
 	case err != nil && res.VerifyFailed:
-		return []notify.Event{{Kind: "verify_failed", Environment: env, Time: now, Message: err.Error()}}
+		return []notify.Event{{Kind: notify.KindVerifyFailed, Environment: env, Time: now, Message: err.Error()}}
 	case err != nil:
-		return []notify.Event{{Kind: "reconcile_failed", Environment: env, Time: now, Message: "reconcile failed: " + err.Error()}}
+		return []notify.Event{{Kind: notify.KindReconcileFailed, Environment: env, Time: now, Message: "reconcile failed: " + err.Error()}}
 	case res.Deployed:
-		return []notify.Event{{Kind: "deployed", Environment: env, Time: now, Message: "reconciled"}}
+		return []notify.Event{{Kind: notify.KindDeployed, Environment: env, Time: now, Message: "reconciled"}}
 	default:
 		return nil // no change
 	}
@@ -34,7 +34,7 @@ func driftEvent(env string, rep engine.DriftReport) []notify.Event {
 	evs := make([]notify.Event, 0, len(rep.Items))
 	for _, it := range rep.Items {
 		evs = append(evs, notify.Event{
-			Kind: "drift_alarm", Environment: env, Time: time.Now(),
+			Kind: notify.KindDriftAlarm, Environment: env, Time: time.Now(),
 			Message: fmt.Sprintf("drift: %s in %s is %s behind latest (%s)",
 				it.Component, env, humanize.Duration(it.Age), it.Latest.SemverVersion),
 		})

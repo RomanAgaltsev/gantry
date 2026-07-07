@@ -101,7 +101,7 @@ func (l *fakeLedger) Lookup(env, sha string) (ledger.Entry, bool, error) {
 
 func (l *fakeLedger) LatestGreen(env string) (ledger.Entry, error) {
 	for i := len(l.entries) - 1; i >= 0; i-- {
-		if l.entries[i].Environment == env && l.entries[i].Result == "ok" {
+		if l.entries[i].Environment == env && l.entries[i].Result == ledger.ResultOK {
 			return l.entries[i], nil
 		}
 	}
@@ -120,7 +120,7 @@ func (l *fakeLedger) History(env string) ([]ledger.Entry, error) {
 
 func (l *fakeLedger) LatestHealthy(env string) (ledger.Entry, error) {
 	for i := len(l.entries) - 1; i >= 0; i-- {
-		if l.entries[i].Environment == env && l.entries[i].Result == "ok" && l.entries[i].Healthy == "true" {
+		if l.entries[i].Environment == env && l.entries[i].Result == ledger.ResultOK && l.entries[i].Healthy == ledger.HealthTrue {
 			return l.entries[i], nil
 		}
 	}
@@ -159,7 +159,7 @@ func TestSync_DeployFailureRecordsFailedSoNextSyncHeals(t *testing.T) {
 	// keyed by the pin commit so the next Sync self-heals.
 	require.NotNil(t, store.committed)
 	require.Len(t, led.entries, 1)
-	require.Equal(t, "failed", led.entries[0].Result)
+	require.Equal(t, ledger.ResultFailed, led.entries[0].Result)
 	require.Equal(t, "newsha", led.entries[0].PinCommit)
 	require.Equal(t, "sync", led.entries[0].By)
 }
@@ -328,10 +328,10 @@ func TestSync_DiffDeploysCommitsAndRecords(t *testing.T) {
 	require.Equal(t, pin.Set{"SVC_IMAGE": "reg/svc:v2"}, store.committed)
 	require.Len(t, res.Changes, 1)
 	require.Len(t, led.entries, 1)
-	require.Equal(t, "ok", led.entries[0].Result)
+	require.Equal(t, ledger.ResultOK, led.entries[0].Result)
 	require.Equal(t, "newsha", led.entries[0].PinCommit)
 	require.Equal(t, "sync", led.entries[0].By)
-	require.Equal(t, "unknown", led.entries[0].Healthy)
+	require.Equal(t, ledger.HealthUnknown, led.entries[0].Healthy)
 }
 
 func TestSync_NoDiff_Green_IsNoOp(t *testing.T) {
@@ -359,7 +359,7 @@ func TestSync_NoDiff_NotGreen_SelfHeals(t *testing.T) {
 	require.True(t, ex.called)
 	require.True(t, res.Recovered)
 	require.Equal(t, pin.Set{"SVC_IMAGE": "reg/svc:v1"}, ex.pins)
-	require.Equal(t, "ok", led.entries[len(led.entries)-1].Result)
+	require.Equal(t, ledger.ResultOK, led.entries[len(led.entries)-1].Result)
 	require.Equal(t, "h1", led.entries[len(led.entries)-1].PinCommit)
 }
 
@@ -378,8 +378,8 @@ func TestDeployAndRecord_VerifyMatrix(t *testing.T) {
 		vfd, err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, fakeVerifier{nil}, led)
 		require.NoError(t, err)
 		require.False(t, vfd)
-		require.Equal(t, "ok", led.entries[0].Result)
-		require.Equal(t, "true", led.entries[0].Healthy)
+		require.Equal(t, ledger.ResultOK, led.entries[0].Result)
+		require.Equal(t, ledger.HealthTrue, led.entries[0].Healthy)
 	})
 
 	t.Run("deploy ok, verify fail -> failed/false + error", func(t *testing.T) {
@@ -388,8 +388,8 @@ func TestDeployAndRecord_VerifyMatrix(t *testing.T) {
 		require.Error(t, err)
 		require.True(t, vfd) // the verify step failed
 		require.Contains(t, err.Error(), "verify")
-		require.Equal(t, "failed", led.entries[0].Result)
-		require.Equal(t, "false", led.entries[0].Healthy)
+		require.Equal(t, ledger.ResultFailed, led.entries[0].Result)
+		require.Equal(t, ledger.HealthFalse, led.entries[0].Healthy)
 	})
 
 	t.Run("no verifier -> ok/unknown (A2 behavior preserved)", func(t *testing.T) {
@@ -397,7 +397,7 @@ func TestDeployAndRecord_VerifyMatrix(t *testing.T) {
 		vfd, err := deployAndRecord(context.Background(), "test", ".env", pins, "sha1", "deploy", &fakeExec{}, nil, led)
 		require.NoError(t, err)
 		require.False(t, vfd)
-		require.Equal(t, "unknown", led.entries[0].Healthy)
+		require.Equal(t, ledger.HealthUnknown, led.entries[0].Healthy)
 	})
 
 	t.Run("deploy fail -> verify not run, failed/unknown", func(t *testing.T) {
@@ -406,8 +406,8 @@ func TestDeployAndRecord_VerifyMatrix(t *testing.T) {
 		require.Error(t, err)
 		require.False(t, vfd) // a deploy failure is not a verify failure
 		require.Contains(t, err.Error(), "deploy")
-		require.Equal(t, "failed", led.entries[0].Result)
-		require.Equal(t, "unknown", led.entries[0].Healthy)
+		require.Equal(t, ledger.ResultFailed, led.entries[0].Result)
+		require.Equal(t, ledger.HealthUnknown, led.entries[0].Healthy)
 	})
 }
 
@@ -421,7 +421,7 @@ func TestSync_ThreadsVerifier(t *testing.T) {
 
 		_, err := Sync(context.Background(), cfg(), "test", f, &fakeExec{}, fakeVerifier{nil}, store, led, SyncOptions{})
 		require.NoError(t, err)
-		require.Equal(t, "true", led.entries[0].Healthy)
+		require.Equal(t, ledger.HealthTrue, led.entries[0].Healthy)
 	})
 
 	t.Run("failing probe fails the sync and records healthy=false", func(t *testing.T) {
@@ -431,8 +431,8 @@ func TestSync_ThreadsVerifier(t *testing.T) {
 
 		_, err := Sync(context.Background(), cfg(), "test", f, &fakeExec{}, fakeVerifier{errors.New("503")}, store, led, SyncOptions{})
 		require.ErrorContains(t, err, "verify")
-		require.Equal(t, "failed", led.entries[0].Result)
-		require.Equal(t, "false", led.entries[0].Healthy)
+		require.Equal(t, ledger.ResultFailed, led.entries[0].Result)
+		require.Equal(t, ledger.HealthFalse, led.entries[0].Healthy)
 	})
 }
 
@@ -446,7 +446,7 @@ func TestDeploy_ThreadsVerifier(t *testing.T) {
 
 	_, err := Deploy(context.Background(), c, "test", &fakeExec{}, fakeVerifier{errors.New("503")}, store, led)
 	require.ErrorContains(t, err, "verify")
-	require.Equal(t, "false", led.entries[0].Healthy)
+	require.Equal(t, ledger.HealthFalse, led.entries[0].Healthy)
 }
 
 func TestDeploy_SetsPlanCommit(t *testing.T) {
@@ -519,7 +519,7 @@ func TestRollback_BlueGreenFlipsBack(t *testing.T) {
 	require.Equal(t, "blue", res.Slot)
 	require.True(t, res.Deployed)
 	require.Equal(t, "rollback", led.entries[len(led.entries)-1].By)
-	require.Equal(t, "unknown", led.entries[len(led.entries)-1].Healthy) // flip does not verify health
+	require.Equal(t, ledger.HealthUnknown, led.entries[len(led.entries)-1].Healthy) // flip does not verify health
 }
 
 // seqVerifier returns errs[i] for call i, then nil. Lets a test fail the initial deploy's
@@ -560,9 +560,9 @@ func TestDeploy_AutoRollbackOnVerifyFailure(t *testing.T) {
 	require.ErrorContains(t, err, "rolled back")
 	require.True(t, res.AutoRolledBack)
 	require.Equal(t, "good", res.RolledBackTo)
-	require.Equal(t, "failed", led.entries[1].Result) // the bad deploy
+	require.Equal(t, ledger.ResultFailed, led.entries[1].Result) // the bad deploy
 	last := led.entries[len(led.entries)-1]
-	require.Equal(t, "ok", last.Result)
+	require.Equal(t, ledger.ResultOK, last.Result)
 	require.Equal(t, "auto-rollback", last.By)
 }
 
@@ -578,7 +578,7 @@ func TestDeploy_HoldOnVerifyFailure(t *testing.T) {
 	require.Error(t, err)
 	require.False(t, res.AutoRolledBack)
 	require.Len(t, led.entries, 1)
-	require.Equal(t, "failed", led.entries[0].Result)
+	require.Equal(t, ledger.ResultFailed, led.entries[0].Result)
 }
 
 func TestDeploy_AutoRollbackNoPriorGreen(t *testing.T) {
@@ -602,7 +602,7 @@ func TestDeploy_DeployFailureIsNotAutoRolledBack(t *testing.T) {
 	res, err := Deploy(context.Background(), rollbackCfgEng(), "test", &failExec{}, fakeVerifier{nil}, store, led)
 	require.Error(t, err)
 	require.False(t, res.AutoRolledBack) // deploy failure != verify failure
-	require.Equal(t, "failed", led.entries[len(led.entries)-1].Result)
+	require.Equal(t, ledger.ResultFailed, led.entries[len(led.entries)-1].Result)
 	require.NotEqual(t, "auto-rollback", led.entries[len(led.entries)-1].By)
 }
 
