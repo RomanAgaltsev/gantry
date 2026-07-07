@@ -49,6 +49,7 @@ type SMTPConfig struct {
 	Port     int       `yaml:"port"`
 	Username string    `yaml:"username"`
 	Password SecretRef `yaml:"password"`
+	TLS      string    `yaml:"tls"` // "" | "starttls" | "implicit"; default starttls
 }
 
 // VerifyProbe is one post-deploy health check for an environment.
@@ -399,6 +400,11 @@ func (c *Config) validateNotifications() error {
 		case "email":
 			if ch.SMTP.Host == "" || ch.From == "" || len(ch.To) == 0 {
 				return fmt.Errorf("notifications[%d]: email requires smtp.host, from, and at least one to", i)
+			}
+			switch ch.SMTP.TLS {
+			case "", "starttls", "implicit":
+			default:
+				return fmt.Errorf("notifications[%d]: unsupported smtp.tls %q (want starttls|implicit)", i, ch.SMTP.TLS)
 			}
 		default:
 			return fmt.Errorf("notifications[%d]: unsupported kind %q (want webhook|email)", i, ch.Kind)
