@@ -20,6 +20,13 @@ type Runner interface {
 	Run(ctx context.Context, cmd string, stdin []byte) (string, error)
 }
 
+// Closer is an optional Runner capability: a runner holding a pooled connection (the SSH
+// runner) implements it so long-running callers (the daemon) can release the connection
+// between reconciles. A test/stub runner without a connection need not implement it.
+type Closer interface {
+	Close() error
+}
+
 // Executor implements executor.Executor over an SSH Runner.
 type Executor struct {
 	Runner       Runner
@@ -49,6 +56,14 @@ func (e *Executor) Deploy(ctx context.Context, p executor.Plan) (executor.Result
 // ComposeTarget reports where this executor runs compose, for compose-ps verification.
 func (e *Executor) ComposeTarget(context.Context) (verify.ComposeTarget, error) {
 	return verify.ComposeTarget{ProjectDir: e.ProjectDir, ComposeFiles: e.ComposeFiles, EnvFile: e.EnvFile}, nil
+}
+
+// CloseRunner releases the executor's runner connection if the runner supports it.
+func (e *Executor) CloseRunner() error {
+	if c, ok := e.Runner.(Closer); ok {
+		return c.Close()
+	}
+	return nil
 }
 
 // ComposeOpts configures a compose pull+up run.

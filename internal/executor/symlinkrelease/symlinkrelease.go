@@ -77,3 +77,11 @@ func (e *Executor) Deploy(ctx context.Context, p executor.Plan) (executor.Result
 func (e *Executor) ComposeTarget(context.Context) (verify.ComposeTarget, error) {
 	return verify.ComposeTarget{ProjectDir: e.ProjectDir, ComposeFiles: e.ComposeFiles, EnvFile: envInRelease}, nil
 }
+
+// CloseRunner releases the executor's runner connection if the runner supports it.
+func (e *Executor) CloseRunner() error {
+	if c, ok := e.Runner.(composessh.Closer); ok {
+		return c.Close()
+	}
+	return nil
+}

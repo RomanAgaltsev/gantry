@@ -138,3 +138,11 @@ func (e *Executor) ComposeTarget(ctx context.Context) (verify.ComposeTarget, err
 	s := e.SlotMap[idle]
 	return verify.ComposeTarget{ProjectDir: s.ProjectDir, ComposeFiles: s.ComposeFiles, EnvFile: slotEnvFile}, nil
 }
+
+// CloseRunner releases the executor's runner connection if the runner supports it.
+func (e *Executor) CloseRunner() error {
+	if c, ok := e.Runner.(composessh.Closer); ok {
+		return c.Close()
+	}
+	return nil
+}
