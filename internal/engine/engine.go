@@ -23,6 +23,11 @@ var ErrNoHistory = errors.New("pin file has no commit history")
 // ErrNoParent is returned when a commit has no parent (the first commit).
 var ErrNoParent = errors.New("commit has no parent")
 
+// ErrNonFastForward is returned by a RemoteSyncer's PullFF when the remote has diverged from
+// local history — gantry's single-writer model does not merge; the operator must reconcile the
+// clones (review D1).
+var ErrNonFastForward = errors.New("remote has diverged; refusing non-fast-forward pull")
+
 // PinStore reads and commits an environment's pin file.
 type PinStore interface {
 	Read(pinFile string) (pin.Set, error)

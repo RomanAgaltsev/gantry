@@ -60,11 +60,25 @@ type VerifyProbe struct {
 	Command      string `yaml:"command"`       // command
 }
 
-// GitConfig sets the identity gantry stamps on the pin commits it makes.
-// Both fields default (see Load) so the block is optional.
+// GitConfig sets the identity gantry stamps on the pin commits it makes, and optionally
+// turns the daemon into a fleet-safe worker that fast-forward-pulls and pushes a remote so
+// multiple clones of the same repo converge (review D1).
 type GitConfig struct {
-	AuthorName  string `yaml:"author_name"`
-	AuthorEmail string `yaml:"author_email"`
+	AuthorName  string       `yaml:"author_name"`
+	AuthorEmail string       `yaml:"author_email"`
+	Remote      RemoteConfig `yaml:"remote"` // optional; when unset the daemon works the local clone only
+}
+
+// RemoteConfig turns the daemon into a fleet-safe worker: when Pull/Push are enabled it
+// fast-forward-pulls before each reconcile cycle and pushes after each cycle that committed,
+// so multiple clones of the same repo converge instead of splitting the ledger (review D1).
+type RemoteConfig struct {
+	Name     string    `yaml:"name"`     // remote name; default "origin"
+	Branch   string    `yaml:"branch"`   // branch to pull/push; default the current HEAD branch
+	Pull     bool      `yaml:"pull"`     // ff-only pull at the top of each reconcile cycle
+	Push     bool      `yaml:"push"`     // push after each cycle that committed
+	Username string    `yaml:"username"` // HTTPS basic-auth username (e.g. a token name); optional
+	Token    SecretRef `yaml:"token"`    // HTTPS auth token/password; a SecretRef
 }
 
 // ForgeConfig selects and configures the forge adapter.
@@ -222,6 +236,9 @@ func Load(path string) (*Config, error) {
 	if c.Git.AuthorEmail == "" {
 		c.Git.AuthorEmail = "gantry@local"
 	}
+	if c.Git.Remote.Name == "" {
+		c.Git.Remote.Name = "origin"
+	}
 	if c.Forge.Kind == "github" && c.Forge.BaseURL == "" {
 		c.Forge.BaseURL = "https://api.github.com"
 	}
@@ -266,7 +283,20 @@ func (c *Config) validate() error {
 	if err := c.validateNotifications(); err != nil {
 		return err
 	}
+	if err := c.validateRemote(); err != nil {
+		return err
+	}
 	return c.validateDaemon()
+}
+
+// validateRemote checks the optional git.remote block: push/pull over HTTPS needs a token to
+// authenticate (SSH remotes can leave it unset, but gantry cannot see the remote URL from
+// config, so it requires the token whenever pull/push is enabled and lets SSH ignore it).
+func (c *Config) validateRemote() error {
+	if (c.Git.Remote.Pull || c.Git.Remote.Push) && strings.TrimSpace(c.Git.Remote.Token.Raw) == "" {
+		return errors.New("git.remote.pull/push requires git.remote.token (HTTPS auth)")
+	}
+	return nil
 }
 
 func (c *Config) validateComponents() error {
