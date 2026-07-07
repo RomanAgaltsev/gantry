@@ -249,15 +249,23 @@ the whole block can be omitted.
 git:
   author_name: gantry-bot
   author_email: gantry@example.com
+  remote:               # optional — turns the daemon into a fleet-safe worker (review D1)
+    name: origin        # default origin
+    branch: main        # optional; defaults to the current HEAD branch
+    pull: true          # fast-forward pull at the top of each reconcile cycle
+    push: true          # push after each cycle that committed
+    username: gantry    # HTTPS basic-auth username (token name); optional
+    token: ${env:GANTRY_GIT_TOKEN}  # required when pull/push is enabled
 ```
 
-| Field          | Type   | Default        | Description |
-|----------------|--------|----------------|-------------|
-| `author_name`  | string | `gantry`       | Name recorded on pin commits. |
-| `author_email` | string | `gantry@local` | Email recorded on pin commits. |
+| Field          | Type     | Default        | Description |
+|----------------|----------|----------------|-------------|
+| `author_name`  | string   | `gantry`       | Name recorded on pin commits. |
+| `author_email` | string   | `gantry@local` | Email recorded on pin commits. |
+| `remote`       | object   | disabled       | When `pull`/`push` are set, the daemon fast-forward-pulls before each reconcile cycle and pushes after each cycle that committed, so multiple clones of the same repo converge. `token` is required (HTTPS auth); SSH remotes authenticate via the SSH agent and ignore it. A non-fast-forward pull is a loud stop, never a merge. See [daemon topology](daemon.md#topology-one-writer-clone-or-gitremote-sync). |
 
-> gantry commits the pin file **locally**; it does not push. In CI the runner must
-> push the commit (e.g. `git push`) for the pin history to survive and for `deploy`
+> Without `git.remote`, gantry commits the pin file **locally** and does not push. In CI the
+> runner must push the commit (e.g. `git push`) for the pin history to survive and for `deploy`
 > or promotion on another machine to see it. See
 > [getting-started](getting-started.md#5-sync-pin--deploy).
 

@@ -11,8 +11,12 @@ conceptual model of the ledger, promotion, and rollback, see
 - gantry **must own the working tree**: it builds each commit from the git index, so it
   refuses to act when unrelated changes are already staged
   (`refusing to commit: "<path>" is already staged`). Commit or unstage them first.
-- gantry commits locally and does **not** push. In CI the runner must push the pin **and**
-  ledger commits so promotion/rollback on another machine see the same history.
+- gantry commits locally and does **not** push by default. In CI the runner must push the pin
+  **and** ledger commits so promotion/rollback on another machine see the same history. A
+  daemon that must share history with other clones can instead enable `git.remote.pull/push`
+  (see the [Topology](daemon.md#topology-one-writer-clone-or-gitremote-sync) section) so it
+  fast-forward-pulls before each cycle and pushes after each commit — a divergence is a loud
+  stop, never a merge.
 - credentials are **SecretRefs** (`${env:…}`/`${file:…}` built in; `${cmd:…}`, `${sops:…}`,
   `${vault:…}` shell out to host CLIs). Point a credential at Vault/SOPS with e.g.
   `password: ${sops:secrets.enc.yaml#reg.password}` — but the matching `sops`/`vault` binary

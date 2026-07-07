@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,15 +13,20 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 
 	"github.com/RomanAgaltsev/gantry/internal/gitutil"
 	"github.com/RomanAgaltsev/gantry/internal/pin"
 )
 
 type gitStore struct {
-	repoDir string
-	repo    *git.Repository
-	author  object.Signature
+	repoDir      string
+	repo         *git.Repository
+	author       object.Signature
+	remoteName   string
+	remoteBranch string
+	auth         transport.AuthMethod
 }
 
 // NewGitStore opens repoDir as a git repo whose worktree holds the pin files.
@@ -30,7 +36,7 @@ func NewGitStore(repoDir string, author object.Signature) (PinStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open git repo %q: %w", repoDir, err)
 	}
-	return &gitStore{repoDir: repoDir, repo: repo, author: author}, nil
+	return &gitStore{repoDir: repoDir, repo: repo, author: author, remoteName: "origin"}, nil
 }
 
 // Read returns the pin set as committed at HEAD. A repo with no commits reads empty.
@@ -133,4 +139,54 @@ func (s *gitStore) WriteAndCommit(pinFile string, set pin.Set, msg string) (stri
 		return "", err
 	}
 	return hash.String(), nil
+}
+
+// SetRemoteAuth configures the remote the store pulls from / pushes to and the transport auth
+// used for it. username defaults to "gantry" when empty (a token-only HTTPS remote needs a
+// non-empty username). The branch is informational (PullFF/Push use the current branch when
+// empty). SSH/anonymous remotes leave token empty so no basic-auth method is set.
+func (s *gitStore) SetRemoteAuth(username, token, remote, branch string) {
+	s.remoteName = orDefault(remote, "origin")
+	s.remoteBranch = branch
+	if token != "" {
+		s.auth = &githttp.BasicAuth{Username: orDefault(username, "gantry"), Password: token}
+	}
+}
+
+// PullFF fast-forwards the worktree from the configured remote. A divergence (non-fast-forward)
+// returns ErrNonFastForward rather than merging; an already-up-to-date pull is a no-op.
+func (s *gitStore) PullFF(ctx context.Context) error {
+	wt, err := s.repo.Worktree()
+	if err != nil {
+		return err
+	}
+	opts := &git.PullOptions{RemoteName: s.remoteName, Auth: s.auth, Force: false}
+	if s.remoteBranch != "" {
+		opts.ReferenceName = plumbing.NewBranchReferenceName(s.remoteBranch)
+	}
+	err = wt.PullContext(ctx, opts)
+	switch {
+	case err == nil, errors.Is(err, git.NoErrAlreadyUpToDate):
+		return nil
+	case errors.Is(err, git.ErrNonFastForwardUpdate):
+		return ErrNonFastForward
+	default:
+		return fmt.Errorf("pull %q: %w", s.remoteName, err)
+	}
+}
+
+// Push pushes the current branch to the configured remote. An up-to-date push is a no-op.
+func (s *gitStore) Push(ctx context.Context) error {
+	err := s.repo.PushContext(ctx, &git.PushOptions{RemoteName: s.remoteName, Auth: s.auth})
+	if err == nil || errors.Is(err, git.NoErrAlreadyUpToDate) {
+		return nil
+	}
+	return fmt.Errorf("push %q: %w", s.remoteName, err)
+}
+
+func orDefault(s, def string) string {
+	if s != "" {
+		return s
+	}
+	return def
 }

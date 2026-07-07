@@ -72,6 +72,37 @@ writing the pin file and deploying concurrently. A lock whose owner process is d
 older than 24h) is treated as stale and reclaimed, so a crashed daemon does not strand the
 repo.
 
+## Topology: one writer clone, or `git.remote` sync
+
+The lock is **per-filesystem** — it does not coordinate across machines. The supported
+default is **one writer clone per repo**: exactly one place runs `gantry serve` (and the CLI
+verbs against that clone), period. Running two daemons against two clones of the same repo
+with no coordination splits the ledger and pin history by default.
+
+When the daemon must run somewhere other than the only clone (e.g. it lives on a deploy host
+while operators and CI work from their own clones), turn it into a fleet-safe worker with the
+`git.remote` block:
+
+```yaml
+git:
+  remote:
+    name: origin      # default origin
+    branch: main      # optional; defaults to the current HEAD branch
+    pull: true        # fast-forward pull at the top of each reconcile cycle
+    push: true        # push after each cycle that committed
+    username: gantry  # HTTPS basic-auth username (token name); optional
+    token: ${env:GANTRY_GIT_TOKEN}  # required when pull/push is enabled (HTTPS auth)
+```
+
+With `pull: true`, the daemon fast-forward-pulls origin at the top of every cycle before any
+reconcile, so a Renovate bump to an explicit pin (or another clone's commit) arriving via
+origin is seen on the next tick. With `push: true`, it pushes after any cycle that committed
+its own pin change. gantry **never merges**: a non-fast-forward pull (the clones diverged) is
+a loud stop — it logs a `reconcile_failed` alert and skips that cycle's writes rather than
+creating a divergent merge. SSH remotes authenticate via the user's SSH agent and can leave
+`token` unset (the validation requires it whenever pull/push is on, since gantry cannot see
+the remote URL from config; SSH transport ignores it).
+
 ## `/healthz` and shutdown
 
 `/healthz` returns `200 ok` while the daemon is running — point a load balancer or uptime

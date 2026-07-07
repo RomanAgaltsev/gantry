@@ -32,6 +32,14 @@ func lockPath(repoOrConfig string) string {
 	return filepath.Join(dir, ".gantry", "serve.lock")
 }
 
+// firstNonEmpty returns the first non-empty argument, or def when all are empty.
+func firstNonEmpty(s, def string) string {
+	if s != "" {
+		return s
+	}
+	return def
+}
+
 // acquireServeLock takes the single-writer serve lock so a mutating CLI verb cannot run
 // concurrently with `gantry serve` or another mutating verb (C6 — verbs now Acquire the
 // same lock the daemon does, rather than merely peeking with CheckFree). The returned
@@ -172,11 +180,27 @@ func serveDeps(cfg *config.Config, path string, res config.SecretResolver) (*dae
 	if err != nil {
 		return nil, err
 	}
+	// When git.remote is configured, give the store transport auth (HTTPS token) so the daemon
+	// can pull/push it (D1). The store is a PinStore interface here; reach SetRemoteAuth via an
+	// anonymous interface type-assert so PinStore need not widen for the local-only case.
+	remotePull, remotePush := cfg.Git.Remote.Pull, cfg.Git.Remote.Push
+	if remotePull || remotePush {
+		token, err := res.Resolve(cfg.Git.Remote.Token)
+		if err != nil {
+			return nil, err
+		}
+		if setter, ok := store.(interface {
+			SetRemoteAuth(username, token, remote, branch string)
+		}); ok {
+			setter.SetRemoteAuth(cfg.Git.Remote.Username, token, firstNonEmpty(cfg.Git.Remote.Name, "origin"), cfg.Git.Remote.Branch)
+		}
+	}
 	return &daemon.Deps{
 		Cfg: cfg, Forge: forgeClient, Store: store, Ledger: led,
 		Dispatch: disp, ExecFor: execFor(res, cfg),
 		ReconcileTimeout:      cfg.Daemon.ReconcileTimeout.Duration(),
 		ReconcileFailedRepeat: cfg.Daemon.ReconcileFailedRepeat.Duration(),
+		RemotePull:            remotePull, RemotePush: remotePush,
 	}, nil
 }
 
