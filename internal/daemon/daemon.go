@@ -88,7 +88,7 @@ func reconcileAll(ctx context.Context, d Deps) {
 			// A divergence or transport error must not merge or crash: skip this cycle's work
 			// and alert, so the operator sees the split instead of silent drift (D1).
 			logging.From(ctx).Error("remote pull failed; skipping reconcile cycle", "error", err)
-			d.Dispatch.Dispatch(ctx, notify.Event{Kind: "reconcile_failed", Environment: "*", Time: time.Now(), Message: "remote pull failed: " + err.Error()})
+			d.Dispatch.Dispatch(ctx, notify.Event{Kind: notify.KindReconcileFailed, Environment: "*", Time: time.Now(), Message: "remote pull failed: " + err.Error()})
 			return
 		}
 	}
@@ -105,7 +105,7 @@ func reconcileAll(ctx context.Context, d Deps) {
 	if d.RemotePush && canSync && committed {
 		if err := syncer.Push(ctx); err != nil {
 			logging.From(ctx).Error("remote push failed", "error", err)
-			d.Dispatch.Dispatch(ctx, notify.Event{Kind: "reconcile_failed", Environment: "*", Time: time.Now(), Message: "remote push failed: " + err.Error()})
+			d.Dispatch.Dispatch(ctx, notify.Event{Kind: notify.KindReconcileFailed, Environment: "*", Time: time.Now(), Message: "remote push failed: " + err.Error()})
 		}
 	}
 }

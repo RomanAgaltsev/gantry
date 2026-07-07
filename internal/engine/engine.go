@@ -127,7 +127,7 @@ func ensureGreen(ctx context.Context, cfg *config.Config, envName, pinFile strin
 	if err != nil {
 		return SyncResult{}, err
 	}
-	if ok && entry.Result == "ok" {
+	if ok && entry.Result == ledger.ResultOK {
 		return SyncResult{}, nil // already green
 	}
 	if opts.DryRun {
@@ -250,16 +250,16 @@ func deployAndRecord(ctx context.Context, env, pinFile string, pins pin.Set, sha
 	}
 	_, deployErr := ex.Deploy(ctx, executor.Plan{Env: env, PinFile: pinFile, Pins: pins, Commit: sha})
 
-	result, healthy := "ok", "unknown"
+	result, healthy := ledger.ResultOK, ledger.HealthUnknown
 	var verifyErr error
 	switch {
 	case deployErr != nil:
-		result = "failed"
+		result = ledger.ResultFailed
 	case vf != nil:
 		if verifyErr = vf.Verify(ctx); verifyErr != nil {
-			result, healthy = "failed", "false"
+			result, healthy = ledger.ResultFailed, ledger.HealthFalse
 		} else {
-			healthy = "true"
+			healthy = ledger.HealthTrue
 		}
 	}
 
@@ -397,10 +397,10 @@ func Promote(ctx context.Context, cfg *config.Config, fromEnv, toEnv, sha string
 		if !ok {
 			return PromoteResult{}, fmt.Errorf("refusing to promote %q@%.7s: no deploy record (gate)", fromEnv, sha)
 		}
-		if entry.Result != "ok" {
+		if entry.Result != ledger.ResultOK {
 			return PromoteResult{}, fmt.Errorf("refusing to promote %q@%.7s: last deploy was %q, not ok (gate)", fromEnv, sha, entry.Result)
 		}
-		if cfg.Promote.RequireHealthy && entry.Healthy != "true" {
+		if cfg.Promote.RequireHealthy && entry.Healthy != ledger.HealthTrue {
 			return PromoteResult{}, fmt.Errorf("refusing to promote %q@%.7s: not verified healthy (gate)", fromEnv, sha)
 		}
 	}
@@ -479,7 +479,7 @@ func rollback(ctx context.Context, cfg *config.Config, envName string, ex execut
 	}
 	target := ""
 	for _, e := range hist {
-		if e.Result == "ok" && e.PinCommit != last {
+		if e.Result == ledger.ResultOK && e.PinCommit != last {
 			target = e.PinCommit
 			break
 		}
@@ -534,8 +534,8 @@ func slotRollback(ctx context.Context, envName, pinFile string, se executor.Slot
 	rec := ledger.Entry{
 		Environment: envName,
 		PinCommit:   head,
-		Result:      "ok",
-		Healthy:     "unknown", // a pointer flip does not verify service health
+		Result:      ledger.ResultOK,
+		Healthy:     ledger.HealthUnknown, // a pointer flip does not verify service health
 		DeployedAt:  time.Now(),
 		By:          by,
 	}
@@ -586,7 +586,7 @@ func Switch(ctx context.Context, cfg *config.Config, envName string, ex executor
 	if err != nil {
 		return SwitchResult{}, err
 	}
-	if !ok || entry.Result != "ok" {
+	if !ok || entry.Result != ledger.ResultOK {
 		return SwitchResult{}, fmt.Errorf("refusing to switch %q: idle slot deploy at %.7s is not ok (gate)", envName, head)
 	}
 	live, err := se.LiveSlot(ctx)
@@ -606,7 +606,7 @@ func Switch(ctx context.Context, cfg *config.Config, envName string, ex executor
 	rec := ledger.Entry{
 		Environment: envName,
 		PinCommit:   head,
-		Result:      "ok",
+		Result:      ledger.ResultOK,
 		Healthy:     entry.Healthy,
 		ImageSet:    entry.ImageSet,
 		DeployedAt:  time.Now(),
