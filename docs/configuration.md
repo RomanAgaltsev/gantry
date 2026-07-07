@@ -69,6 +69,15 @@ embed a metadata block delimited by the configured marker:
 release with a missing or invalid metadata block is a **hard error** — gantry never
 silently skips a release.
 
+Both GitHub and GitLab resolve "latest" to the newest **non-prerelease** release. gantry
+identifies a prerelease from the release metadata's `semver_version`: any value with a
+SemVer prerelease segment (a `-` before any `+` build metadata, e.g. `v1.3.0-rc1`,
+`2.0.0-beta.1`) is treated as a prerelease and skipped when scanning for the latest
+release. This keeps GitHub (`/releases/latest`, which already excludes prereleases) and
+GitLab (whose Releases API lists prereleases by date) aligned, so a team tagging an RC does
+not get it auto-deployed on one forge but not the other. An empty `semver_version` is
+treated as a stable release so gantry never skips a release that simply lacks the field.
+
 When `image_digest` is present, gantry pins the **digest** alongside the tag —
 `repository:tag@sha256:…` — so a later re-push of the same tag cannot change the
 image a host pulls. Without a digest it falls back to a tag-only `repository:tag`
@@ -240,15 +249,23 @@ the whole block can be omitted.
 git:
   author_name: gantry-bot
   author_email: gantry@example.com
+  remote:               # optional — turns the daemon into a fleet-safe worker (review D1)
+    name: origin        # default origin
+    branch: main        # optional; defaults to the current HEAD branch
+    pull: true          # fast-forward pull at the top of each reconcile cycle
+    push: true          # push after each cycle that committed
+    username: gantry    # HTTPS basic-auth username (token name); optional
+    token: ${env:GANTRY_GIT_TOKEN}  # required when pull/push is enabled
 ```
 
-| Field          | Type   | Default        | Description |
-|----------------|--------|----------------|-------------|
-| `author_name`  | string | `gantry`       | Name recorded on pin commits. |
-| `author_email` | string | `gantry@local` | Email recorded on pin commits. |
+| Field          | Type     | Default        | Description |
+|----------------|----------|----------------|-------------|
+| `author_name`  | string   | `gantry`       | Name recorded on pin commits. |
+| `author_email` | string   | `gantry@local` | Email recorded on pin commits. |
+| `remote`       | object   | disabled       | When `pull`/`push` are set, the daemon fast-forward-pulls before each reconcile cycle and pushes after each cycle that committed, so multiple clones of the same repo converge. `token` is required (HTTPS auth); SSH remotes authenticate via the SSH agent and ignore it. A non-fast-forward pull is a loud stop, never a merge. See [daemon topology](daemon.md#topology-one-writer-clone-or-gitremote-sync). |
 
-> gantry commits the pin file **locally**; it does not push. In CI the runner must
-> push the commit (e.g. `git push`) for the pin history to survive and for `deploy`
+> Without `git.remote`, gantry commits the pin file **locally** and does not push. In CI the
+> runner must push the commit (e.g. `git push`) for the pin history to survive and for `deploy`
 > or promotion on another machine to see it. See
 > [getting-started](getting-started.md#5-sync-pin--deploy).
 

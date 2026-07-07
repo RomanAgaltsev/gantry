@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/spf13/cobra"
 
 	"github.com/RomanAgaltsev/gantry/internal/engine"
@@ -21,6 +23,19 @@ func newPlanCmd() *cobra.Command {
 				return err
 			}
 			printChanges(cmd, res.Changes, res.Deployed, res.Recovered)
+			if env, ok := d.cfg.Environment(d.env); ok {
+				current, rerr := d.store.Read(env.PinFile)
+				if rerr != nil {
+					return rerr
+				}
+				if orphans := engine.Orphans(d.cfg, current); len(orphans) > 0 {
+					cmd.Printf("orphan pins (in pin file, not in config): %s — run `gantry prune --env %s`\n",
+						strings.Join(orphans, ", "), d.env)
+				}
+				if missing := engine.MissingKeys(d.cfg, current); len(missing) > 0 {
+					cmd.Printf("missing pins (in config, not in pin file): %s\n", strings.Join(missing, ", "))
+				}
+			}
 			return nil
 		},
 	}

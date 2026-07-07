@@ -12,7 +12,7 @@ func buildNotifier(res config.SecretResolver, channels []config.NotifyChannel) (
 	for _, ch := range channels {
 		events := eventSet(ch.Events)
 		switch ch.Kind {
-		case "webhook":
+		case "webhook", "slack", "telegram":
 			url, err := res.Resolve(ch.URL)
 			if err != nil {
 				return nil, err
@@ -21,7 +21,7 @@ func buildNotifier(res config.SecretResolver, channels []config.NotifyChannel) (
 			if err != nil {
 				return nil, err
 			}
-			d = append(d, notify.Channel{Notifier: notify.WebhookNotifier{URL: url, ChatID: chatID}, Events: events})
+			d = append(d, notify.Channel{Notifier: notify.WebhookNotifier{URL: url, ChatID: chatID, Shape: shapeFor(ch.Kind)}, Events: events})
 		case "email":
 			pw, err := res.Resolve(ch.SMTP.Password)
 			if err != nil {
@@ -46,4 +46,16 @@ func eventSet(events []string) map[string]bool {
 		m[e] = true
 	}
 	return m
+}
+
+// shapeFor maps a config notification kind to a notify webhook payload shape.
+func shapeFor(kind string) notify.PayloadShape {
+	switch kind {
+	case "slack":
+		return notify.ShapeSlack
+	case "telegram":
+		return notify.ShapeTelegram
+	default:
+		return notify.ShapeGeneric
+	}
 }

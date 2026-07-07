@@ -11,17 +11,28 @@ import (
 
 const defaultWebhookTimeout = 10 * time.Second
 
-// WebhookNotifier POSTs an event as JSON. The payload is Telegram-compatible: a Telegram Bot
-// API sendMessage endpoint reads chat_id and text and ignores the extra fields, while a
-// generic consumer can read the structured fields.
+// PayloadShape selects the JSON body a WebhookNotifier posts: the generic structured payload,
+// Telegram's sendMessage shape (chat_id + text), or Slack's minimal {text}. Named kinds are
+// thin wrappers over one webhook core (review D6).
+type PayloadShape string
+
+const (
+	ShapeGeneric  PayloadShape = ""         // structured fields (kind=webhook)
+	ShapeTelegram PayloadShape = "telegram" // chat_id + text
+	ShapeSlack    PayloadShape = "slack"    // {"text": …}
+)
+
+// WebhookNotifier POSTs an event as JSON. The payload shape is selected by Shape: the generic
+// structured body (default), Telegram's sendMessage body (chat_id + text), or Slack's minimal
+// {text}. Named notifier kinds (slack/telegram) are thin wrappers over this core (review D6).
 type WebhookNotifier struct {
 	URL    string
-	ChatID string // optional; included only when non-empty (Telegram)
+	ChatID string // Telegram only; ignored by the other shapes
+	Shape  PayloadShape
 	Client *http.Client
 }
 
 type webhookPayload struct {
-	ChatID      string `json:"chat_id,omitempty"`
 	Text        string `json:"text"`
 	Event       string `json:"event"`
 	Environment string `json:"environment"`
@@ -36,15 +47,7 @@ func (w WebhookNotifier) Notify(ctx context.Context, e Event) error {
 	if client == nil {
 		client = &http.Client{Timeout: defaultWebhookTimeout}
 	}
-	body, err := json.Marshal(webhookPayload{
-		ChatID:      w.ChatID,
-		Text:        e.Message,
-		Event:       e.Kind,
-		Environment: e.Environment,
-		Commit:      e.Commit,
-		By:          e.By,
-		Timestamp:   e.Time.UTC().Format(time.RFC3339),
-	})
+	body, err := w.marshal(e)
 	if err != nil {
 		return err
 	}
@@ -62,4 +65,24 @@ func (w WebhookNotifier) Notify(ctx context.Context, e Event) error {
 		return fmt.Errorf("webhook returned %s", resp.Status)
 	}
 	return nil
+}
+
+// marshal builds the request body for the configured shape.
+func (w WebhookNotifier) marshal(e Event) ([]byte, error) {
+	switch w.Shape {
+	case ShapeSlack:
+		return json.Marshal(struct {
+			Text string `json:"text"`
+		}{Text: e.Message})
+	case ShapeTelegram:
+		return json.Marshal(struct {
+			ChatID string `json:"chat_id"`
+			Text   string `json:"text"`
+		}{ChatID: w.ChatID, Text: e.Message})
+	default:
+		return json.Marshal(webhookPayload{
+			Text: e.Message, Event: e.Kind, Environment: e.Environment,
+			Commit: e.Commit, By: e.By, Timestamp: e.Time.UTC().Format(time.RFC3339),
+		})
+	}
 }
