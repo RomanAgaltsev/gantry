@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -39,6 +40,19 @@ func guardServe(cmd *cobra.Command) error {
 		return err
 	}
 	return daemon.CheckFree(lockPath(path))
+}
+
+// resolveInterval picks the daemon interval: the --interval flag when set (parsed with the
+// day-suffix-aware config.ParseDuration so "1d" works and a typo errors), else cfgDefault.
+func resolveInterval(flag string, cfgDefault time.Duration) (time.Duration, error) {
+	if flag == "" {
+		return cfgDefault, nil
+	}
+	d, err := config.ParseDuration(flag)
+	if err != nil {
+		return 0, fmt.Errorf("--interval %q: %w", flag, err)
+	}
+	return d, nil
 }
 
 func newServeCmd() *cobra.Command {
@@ -97,11 +111,9 @@ func runServe(cmd *cobra.Command, interval string) error {
 	}
 	defer func() { _ = lock.Release() }() //nolint:gosec // best-effort lock release on shutdown
 
-	ivl := cfg.Daemon.Interval.Duration()
-	if interval != "" {
-		if d, perr := time.ParseDuration(interval); perr == nil {
-			ivl = d
-		}
+	ivl, err := resolveInterval(interval, cfg.Daemon.Interval.Duration())
+	if err != nil {
+		return err
 	}
 
 	srv := &http.Server{
