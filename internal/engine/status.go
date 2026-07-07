@@ -7,6 +7,7 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/config"
 	"github.com/RomanAgaltsev/gantry/internal/forge"
 	"github.com/RomanAgaltsev/gantry/internal/ledger"
+	"github.com/RomanAgaltsev/gantry/internal/logging"
 )
 
 // NOTE: the package var `timeNow = time.Now` is ALREADY declared in this package
@@ -17,6 +18,11 @@ import (
 // untrackedRef is the Latest value shown for explicit (registry-sourced) components,
 // which have no gantry-known "latest" release.
 const untrackedRef = "(untracked)"
+
+// errorRef is the Latest value shown for a component whose release fetch failed, so one bad
+// component (a repo without a release, a 404) degrades its cell instead of failing the whole
+// matrix (C5). An error cell never counts as drift.
+const errorRef = "(error)"
 
 // EnvHealth is one environment's most recent deploy outcome from the ledger.
 type EnvHealth struct {
@@ -59,7 +65,11 @@ func StatusMatrix(ctx context.Context, cfg *config.Config, f forge.Forge, store 
 		}
 		rel, err := f.LatestRelease(ctx, forge.Component{ID: comp.ID, Project: comp.Project, PinKey: comp.PinKey})
 		if err != nil {
-			return Matrix{}, err
+			// One component's forge error (a repo without a release, a 404) degrades this cell
+			// instead of failing the whole matrix — you most need status during an incident (C5).
+			logging.From(ctx).Warn("status: latest release unavailable", "component", comp.ID, "error", err)
+			m.Latest[comp.PinKey] = errorRef
+			continue
 		}
 		m.Latest[comp.PinKey] = rel.ImageRef()
 	}
@@ -78,7 +88,10 @@ func StatusMatrix(ctx context.Context, cfg *config.Config, f forge.Forge, store 
 		for _, comp := range cfg.Components {
 			ref := pins[comp.PinKey]
 			cells[comp.PinKey] = ref
-			drift[comp.PinKey] = !comp.IsExplicit() && ref != "" && ref != m.Latest[comp.PinKey]
+			// An error cell (release fetch failed) is excluded from drift: "latest unavailable"
+			// must not masquerade as "pinned behind latest" (C5).
+			drift[comp.PinKey] = !comp.IsExplicit() && ref != "" &&
+				m.Latest[comp.PinKey] != errorRef && ref != m.Latest[comp.PinKey]
 		}
 		m.Pins[env.Name] = cells
 		m.Drift[env.Name] = drift

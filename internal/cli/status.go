@@ -63,22 +63,20 @@ func runStatusEnv(cmd *cobra.Command, envName string) error {
 		return err
 	}
 	for _, comp := range d.cfg.Components {
-		line, err := componentStatusLine(cmd.Context(), comp, current, d.forge)
-		if err != nil {
-			return err
-		}
-		cmd.Println(line)
+		cmd.Println(componentStatusLine(cmd.Context(), comp, current, d.forge))
 	}
 	return nil
 }
 
-func componentStatusLine(ctx context.Context, comp config.Component, current pin.Set, f forge.Forge) (string, error) {
+func componentStatusLine(ctx context.Context, comp config.Component, current pin.Set, f forge.Forge) string {
 	if comp.IsExplicit() {
-		return fmt.Sprintf("%-20s pinned=%-24s latest=(untracked)", comp.PinKey, current[comp.PinKey]), nil
+		return fmt.Sprintf("%-20s pinned=%-24s latest=(untracked)", comp.PinKey, current[comp.PinKey])
 	}
 	rel, err := f.LatestRelease(ctx, forge.Component{ID: comp.ID, Project: comp.Project, PinKey: comp.PinKey})
 	if err != nil {
-		return "", err
+		// A forge blip for one component degrades that line to latest=(error) instead of
+		// failing the whole status output — you most need status during an incident (C5).
+		return fmt.Sprintf("%-20s pinned=%-24s latest=(error)", comp.PinKey, current[comp.PinKey])
 	}
-	return fmt.Sprintf("%-20s pinned=%-24s latest=%s", comp.PinKey, current[comp.PinKey], rel.ImageRef()), nil
+	return fmt.Sprintf("%-20s pinned=%-24s latest=%s", comp.PinKey, current[comp.PinKey], rel.ImageRef())
 }
