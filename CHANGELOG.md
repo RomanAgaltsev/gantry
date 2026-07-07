@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.18.1](https://github.com/RomanAgaltsev/gantry/compare/v0.18.0...v0.18.1) (2026-07-07)
+
+
+### Bug Fixes
+
+* performance ([050a698](https://github.com/RomanAgaltsev/gantry/commit/050a698ffafcbb9cb7999d2a2400aa00bbd902ed))
+
+
+### Performance Improvements
+
+* fetch releases once per cycle and in bounded parallel (P1) ([5794f53](https://github.com/RomanAgaltsev/gantry/commit/5794f53f905b90d6c02c8bc01147ce4e155dcefe))
+* **ledger:** cache parsed entries on file mtime, invalidate on record (P2/D4) ([52b273f](https://github.com/RomanAgaltsev/gantry/commit/52b273fb2bb0e08f5ec55230cdc48c976c9c8a92))
+* **notify:** dispatch a single event's channels concurrently (P4) ([8045614](https://github.com/RomanAgaltsev/gantry/commit/8045614f5bd1c88056a6d7907f2d1525e65d36da))
+* **symlink-release:** prune old release dirs with keep:N (P3) ([97acaa8](https://github.com/RomanAgaltsev/gantry/commit/97acaa8b389f9523e545900bbbee8f3da6d48157))
+
 ## [0.18.0](https://github.com/RomanAgaltsev/gantry/compare/v0.17.2...v0.18.0) (2026-07-07)
 
 
