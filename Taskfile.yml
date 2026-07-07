@@ -68,6 +68,14 @@ tasks:
     cmds:
       - go test -race -shuffle=on ./...
 
+  fuzz:
+    desc: short fuzz smoke of the parsers
+    cmds:
+      - go test ./internal/pin/ -run x -fuzz FuzzRead -fuzztime 20s
+      - go test ./internal/forge/ -run x -fuzz FuzzParseMetadata -fuzztime 20s
+      - go test ./internal/verify/ -run x -fuzz FuzzParseComposePS -fuzztime 20s
+      - go test ./internal/executor/composessh/ -run x -fuzz FuzzShellQuote -fuzztime 20s
+
   cover:
     desc: coverage profile
     cmds:
