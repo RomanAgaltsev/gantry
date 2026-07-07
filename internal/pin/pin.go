@@ -26,7 +26,11 @@ func Read(r io.Reader) (Set, error) {
 		if !ok {
 			return nil, fmt.Errorf("malformed pin line: %q", line)
 		}
-		s[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		key := strings.TrimSpace(k)
+		if _, dup := s[key]; dup {
+			return nil, fmt.Errorf("duplicate pin key %q", key)
+		}
+		s[key] = strings.TrimSpace(v)
 	}
 	return s, sc.Err()
 }
