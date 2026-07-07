@@ -40,7 +40,7 @@ func (e *Engine) Drift(ctx context.Context, envName string) (DriftReport, error)
 	if env.Source.Track == "" {
 		return DriftReport{}, fmt.Errorf("environment %q is not track-mode; drift applies to track-mode environments only", envName)
 	}
-	current, err := e.Store.Read(env.PinFile)
+	current, err := e.Store.Read(ctx, env.PinFile)
 	if err != nil {
 		return DriftReport{}, err
 	}

@@ -58,7 +58,7 @@ func runStatusEnv(cmd *cobra.Command, envName string) error {
 		return err
 	}
 	env, _ := d.cfg.Environment(d.env)
-	current, err := d.engine.Store.Read(env.PinFile)
+	current, err := d.engine.Store.Read(cmd.Context(), env.PinFile)
 	if err != nil {
 		return err
 	}
