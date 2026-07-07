@@ -28,3 +28,15 @@ func TestDiff_NoChange(t *testing.T) {
 	s := Set{"A_IMAGE": "reg/a:v1"}
 	require.Empty(t, Diff(s, s))
 }
+
+func TestRead_DuplicateKeyIsAnError(t *testing.T) {
+	_, err := Read(strings.NewReader("SVC_IMAGE=reg/svc:v1\nSVC_IMAGE=reg/svc:v2\n"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate pin key")
+}
+
+func TestRead_DistinctKeysParse(t *testing.T) {
+	s, err := Read(strings.NewReader("A=1\nB=2\n"))
+	require.NoError(t, err)
+	require.Equal(t, Set{"A": "1", "B": "2"}, s)
+}
