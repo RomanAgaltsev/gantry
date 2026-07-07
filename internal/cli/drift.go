@@ -2,13 +2,13 @@ package cli
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/RomanAgaltsev/gantry/internal/config"
 	"github.com/RomanAgaltsev/gantry/internal/engine"
+	"github.com/RomanAgaltsev/gantry/internal/humanize"
 )
 
 // ErrDriftDetected is returned by `gantry drift` when at least one component has
@@ -98,7 +98,7 @@ func printDriftReport(cmd *cobra.Command, rep engine.DriftReport, threshold time
 	for _, it := range rep.Items {
 		cmd.Printf("DRIFT %s/%s: pinned %s, latest %s published %s ago (>%s)\n",
 			it.Env, it.Component, pinnedLabel(it.PinnedRef), it.Latest.SemverVersion,
-			humanizeDuration(it.Age), humanizeDuration(threshold))
+			humanize.Duration(it.Age), humanize.Duration(threshold))
 	}
 }
 
@@ -107,12 +107,4 @@ func pinnedLabel(ref string) string {
 		return "(unpinned)"
 	}
 	return ref
-}
-
-// humanizeDuration renders a duration as whole days when >= 1 day, else whole hours.
-func humanizeDuration(d time.Duration) string {
-	if days := int(d.Hours()) / 24; days >= 1 {
-		return fmt.Sprintf("%dd", days)
-	}
-	return fmt.Sprintf("%dh", int(d.Hours()))
 }
