@@ -29,6 +29,7 @@ func newExecutor(env config.Environment, runner composessh.Runner, logins []comp
 			ProjectDir:   env.Executor.ProjectDir,
 			ComposeFiles: env.Executor.ComposeFiles,
 			Logins:       logins,
+			Keep:         env.Executor.Keep,
 		}, nil
 	case "blue-green":
 		ec := env.Executor

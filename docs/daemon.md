@@ -56,6 +56,18 @@ for that environment on that tick — the loop keeps going; the failure is logge
 matches [verification.md](verification.md): a `verify_on_failure: rollback` environment
 auto-reverts to its last known-good set inside the loop, just as in CLI mode.
 
+### Release fetching: once per cycle
+
+Each component's latest release is resolved **once per cycle** and shared by every
+environment's `Sync` and the drift observation, rather than re-fetched per environment and
+again for drift. The daemon wraps the forge in a short-TTL cache (the TTL is the reconcile
+`interval`) and clears it at the top of every cycle, so a cycle that reconciles three
+track-mode environments does `C` forge calls (one per component), not `2·C·E`.
+
+A doorbell-rung cycle within the same TTL reuses that cached snapshot, so a burst of forge
+webhooks collapses to re-reading the already-fetched releases instead of multiplying calls
+against the forge's API.
+
 ## The single-writer lock
 
 `serve` takes an advisory lock at `<repo>/.gantry/serve.lock` before it starts looping,
@@ -279,3 +291,17 @@ no extra header is needed beyond the webhook secret you configure on the GitHub 
 
 The C3 daemon slices (core loop, metrics, doorbell) are complete, including GitHub HMAC
 signing (`X-Hub-Signature-256`, behind `doorbell.hmac`).
+
+### Ledger growth
+
+The deploy ledger (`.gantry/deploys.jsonl`) is append-only — one JSON line per deploy, one
+commit per deploy. Parsed entries are cached keyed on the file's mtime and reused across all
+queries (`lookup`, `latest green`, `history`, `latest healthy`) within a reconcile cycle, and
+the cache is invalidated on every `Record`, so a busy cycle parses the file once rather than
+once per query. At a 60s interval that turns a full-file parse per env per cycle into a parse
+per cycle.
+
+For very long-lived deployments with tens of thousands of entries the file still grows
+without bound. A future compaction step (truncate entries older than a threshold while keeping
+the newest green per env) is the next shelf item (D4) — the on-disk format change is deferred
+until someone hits the size where parsing becomes noticeable.

@@ -2,8 +2,10 @@ package engine
 
 import (
 	"context"
+	"sync"
 	"time"
 
+	"github.com/RomanAgaltsev/gantry/internal/config"
 	"github.com/RomanAgaltsev/gantry/internal/forge"
 	"github.com/RomanAgaltsev/gantry/internal/logging"
 )
@@ -16,6 +18,10 @@ const untrackedRef = "(untracked)"
 // component (a repo without a release, a 404) degrades its cell instead of failing the whole
 // matrix (C5). An error cell never counts as drift.
 const errorRef = "(error)"
+
+// statusFetchConcurrency bounds concurrent forge calls when building the matrix, so a wide
+// component list overlaps latency without opening an unbounded number of connections (P1).
+const statusFetchConcurrency = 8
 
 // EnvHealth is one environment's most recent deploy outcome from the ledger.
 type EnvHealth struct {
@@ -49,22 +55,42 @@ func (e *Engine) StatusMatrix(ctx context.Context) (Matrix, error) {
 		Drift:  map[string]map[string]bool{},
 	}
 
-	// Latest per component (once, C1-D6).
-	for _, comp := range e.Cfg.Components {
-		m.Components = append(m.Components, comp.PinKey)
+	// Latest per component (once, C1-D6). Fetches run in a bounded worker pool (P1) so a wide
+	// component list overlaps forge latency; results are collected by index and assembled in
+	// config order so the matrix output is byte-identical to the serial version.
+	type latestResult struct {
+		pinKey string
+		ref    string
+	}
+	results := make([]latestResult, len(e.Cfg.Components))
+	sem := make(chan struct{}, statusFetchConcurrency)
+	var wg sync.WaitGroup
+	for i, comp := range e.Cfg.Components {
+		results[i].pinKey = comp.PinKey
 		if comp.IsExplicit() {
-			m.Latest[comp.PinKey] = untrackedRef
+			results[i].ref = untrackedRef
 			continue
 		}
-		rel, err := e.Forge.LatestRelease(ctx, forge.Component{ID: comp.ID, Project: comp.Project, PinKey: comp.PinKey})
-		if err != nil {
-			// One component's forge error (a repo without a release, a 404) degrades this cell
-			// instead of failing the whole matrix — you most need status during an incident (C5).
-			logging.From(ctx).Warn("status: latest release unavailable", "component", comp.ID, "error", err)
-			m.Latest[comp.PinKey] = errorRef
-			continue
-		}
-		m.Latest[comp.PinKey] = rel.ImageRef()
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, comp config.Component) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			rel, err := e.Forge.LatestRelease(ctx, forge.Component{ID: comp.ID, Project: comp.Project, PinKey: comp.PinKey})
+			if err != nil {
+				// One component's forge error degrades its cell instead of failing the whole matrix
+				// — you most need status during an incident (C5). Preserve that under parallelism.
+				logging.From(ctx).Warn("status: latest release unavailable", "component", comp.ID, "error", err)
+				results[i].ref = errorRef
+				return
+			}
+			results[i].ref = rel.ImageRef()
+		}(i, comp)
+	}
+	wg.Wait()
+	for _, r := range results {
+		m.Components = append(m.Components, r.pinKey)
+		m.Latest[r.pinKey] = r.ref
 	}
 
 	// Pins + drift + health per environment.

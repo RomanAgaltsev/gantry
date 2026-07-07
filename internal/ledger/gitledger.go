@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -24,6 +25,11 @@ type gitLedger struct {
 	repoDir string
 	repo    *git.Repository
 	author  object.Signature
+
+	mu       sync.Mutex
+	cache    []Entry
+	cacheMod time.Time // mtime the cache was parsed at; zero ⇒ no cache
+	parses   int       // test-observable parse counter
 }
 
 // NewGitLedger opens repoDir as a git repo and records outcomes to .gantry/deploys.jsonl.
@@ -74,14 +80,33 @@ func (l *gitLedger) Record(_ context.Context, e Entry) error {
 	if _, err := wt.Commit(msg, &git.CommitOptions{Author: &author}); err != nil {
 		return fmt.Errorf("commit ledger: %w", err)
 	}
+	l.mu.Lock()
+	l.cacheMod = time.Time{} // invalidate; the append changed the file
+	l.mu.Unlock()
 	return nil
 }
 
+// all returns every ledger entry, parsing the JSONL file only when its mtime has changed
+// since the last parse (review P2/D4). Repeated queries in a reconcile cycle reuse the parse.
+// A Record explicitly invalidates the cache, so correctness never depends on mtime resolution —
+// mtime is only the cache-hit fast path between writes.
 func (l *gitLedger) all() ([]Entry, error) {
-	b, err := os.ReadFile(l.abs())
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	info, err := os.Stat(l.abs())
 	if errors.Is(err, fs.ErrNotExist) {
+		l.cache, l.cacheMod = nil, time.Time{}
 		return nil, nil
 	}
+	if err != nil {
+		return nil, fmt.Errorf("stat ledger: %w", err)
+	}
+	if !l.cacheMod.IsZero() && info.ModTime().Equal(l.cacheMod) {
+		return l.cache, nil // unchanged since last parse
+	}
+
+	b, err := os.ReadFile(l.abs())
 	if err != nil {
 		return nil, fmt.Errorf("read ledger: %w", err)
 	}
@@ -99,7 +124,11 @@ func (l *gitLedger) all() ([]Entry, error) {
 		}
 		out = append(out, e)
 	}
-	return out, sc.Err()
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	l.cache, l.cacheMod, l.parses = out, info.ModTime(), l.parses+1
+	return out, nil
 }
 
 func (l *gitLedger) Lookup(_ context.Context, env, sha string) (Entry, bool, error) {

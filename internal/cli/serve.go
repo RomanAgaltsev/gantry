@@ -17,6 +17,7 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/config"
 	"github.com/RomanAgaltsev/gantry/internal/daemon"
 	"github.com/RomanAgaltsev/gantry/internal/engine"
+	"github.com/RomanAgaltsev/gantry/internal/forge"
 	"github.com/RomanAgaltsev/gantry/internal/ledger"
 	"github.com/RomanAgaltsev/gantry/internal/logging"
 	"github.com/RomanAgaltsev/gantry/internal/notify"
@@ -167,6 +168,11 @@ func serveDeps(ctx context.Context, cfg *config.Config, path string, res config.
 	if err != nil {
 		return nil, err
 	}
+	// Wrap the forge in a per-cycle release cache so a reconcile fetches each component's latest
+	// release once (shared by every env's Sync and drift observation) instead of once per env plus
+	// again for drift (P1). The cache TTL is the reconcile interval; the daemon clears it at the
+	// top of each cycle so a doorbell-rung run reuses the snapshot until the next clear.
+	cachedForge := forge.NewCache(forgeClient, cfg.Daemon.Interval.Duration())
 	sig := object.Signature{Name: cfg.Git.AuthorName, Email: cfg.Git.AuthorEmail}
 	store, err := engine.NewGitStore(filepath.Dir(path), sig)
 	if err != nil {
@@ -195,7 +201,7 @@ func serveDeps(ctx context.Context, cfg *config.Config, path string, res config.
 			setter.SetRemoteAuth(cfg.Git.Remote.Username, token, firstNonEmpty(cfg.Git.Remote.Name, "origin"), cfg.Git.Remote.Branch)
 		}
 	}
-	eng := engine.New(cfg, forgeClient, store, led)
+	eng := engine.New(cfg, cachedForge, store, led)
 	return &daemon.Deps{
 		Engine:   eng,
 		Dispatch: disp, ExecFor: execFor(res, cfg),

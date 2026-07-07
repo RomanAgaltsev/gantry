@@ -63,3 +63,28 @@ func TestComposeTarget(t *testing.T) {
 	require.Equal(t, "/opt/app", tgt.ProjectDir)
 	require.Equal(t, "current/.env", tgt.EnvFile) // compose runs from the active release
 }
+
+func hasCmd(cmds []string, sub string) bool {
+	for _, c := range cmds {
+		if strings.Contains(c, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestDeploy_PrunesOldReleasesWhenKeepSet(t *testing.T) {
+	fr := &fakeRunner{}
+	e := &Executor{Runner: fr, ProjectDir: "/opt/app", ComposeFiles: []string{"compose.yaml"}, Keep: 2}
+	_, err := e.Deploy(context.Background(), executor.Plan{Env: "prod", Pins: pin.Set{"A": "reg/a:v1"}, Commit: "c3"})
+	require.NoError(t, err)
+	require.True(t, hasCmd(fr.cmds, "rm -rf"), "a prune command must run when Keep>0")
+}
+
+func TestDeploy_NoPruneWhenKeepZero(t *testing.T) {
+	fr := &fakeRunner{}
+	e := &Executor{Runner: fr, ProjectDir: "/opt/app", ComposeFiles: []string{"compose.yaml"}, Keep: 0}
+	_, err := e.Deploy(context.Background(), executor.Plan{Env: "prod", Pins: pin.Set{"A": "reg/a:v1"}, Commit: "c1"})
+	require.NoError(t, err)
+	require.False(t, hasCmd(fr.cmds, "rm -rf"))
+}
