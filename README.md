@@ -60,8 +60,10 @@ A complete, runnable configuration lives in [`examples/demo`](examples/demo/) â€
 generic two-component setup that is intentionally unrelated to any specific system,
 to show that gantry is driven entirely by `gantry.yaml`.
 
-See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough and
-[docs/configuration.md](docs/configuration.md) for the complete config reference.
+See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough,
+[docs/configuration.md](docs/configuration.md) for the complete config reference, and
+[docs/upgrade-notes.md](docs/upgrade-notes.md) for behaviour changes that need operator
+attention when upgrading.
 
 ## Roadmap
 
