@@ -25,7 +25,7 @@ func FromConfig(cfg *config.Config, res config.SecretResolver) (Dispatcher, erro
 
 func buildNotifier(ch config.NotifyChannel, res config.SecretResolver) (Notifier, error) {
 	switch ch.Kind {
-	case "webhook":
+	case "webhook", "slack", "telegram":
 		url, err := res.Resolve(ch.URL)
 		if err != nil {
 			return nil, err
@@ -34,7 +34,7 @@ func buildNotifier(ch config.NotifyChannel, res config.SecretResolver) (Notifier
 		if err != nil {
 			return nil, err
 		}
-		return WebhookNotifier{URL: url, ChatID: chatID, Client: &http.Client{}}, nil
+		return WebhookNotifier{URL: url, ChatID: chatID, Shape: PayloadShape(shapeFor(ch.Kind)), Client: &http.Client{}}, nil
 	case "email":
 		pw, err := res.Resolve(ch.SMTP.Password)
 		if err != nil {
@@ -43,6 +43,18 @@ func buildNotifier(ch config.NotifyChannel, res config.SecretResolver) (Notifier
 		return NewEmailNotifier(ch.SMTP.Host, ch.SMTP.Port, ch.SMTP.Username, pw, ch.From, ch.To, ch.SMTP.TLS), nil
 	default:
 		return nil, fmt.Errorf("notifications: unsupported kind %q", ch.Kind)
+	}
+}
+
+// shapeFor maps a config notification kind to a webhook payload shape.
+func shapeFor(kind string) string {
+	switch kind {
+	case "slack":
+		return "slack"
+	case "telegram":
+		return "telegram"
+	default:
+		return "" // generic webhook
 	}
 }
 

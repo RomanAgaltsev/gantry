@@ -390,12 +390,16 @@ var notifyEventKinds = map[string]bool{
 	"verify_failed": true, "drift_alarm": true,
 }
 
+//nolint:gocognit // the per-kind switch is naturally a flat dispatch; splitting it hurts readability
 func (c *Config) validateNotifications() error {
 	for i, ch := range c.Notifications {
 		switch ch.Kind {
-		case "webhook":
+		case "webhook", "slack", "telegram":
 			if strings.TrimSpace(ch.URL.Raw) == "" {
-				return fmt.Errorf("notifications[%d]: webhook requires url", i)
+				return fmt.Errorf("notifications[%d]: %s requires url", i, ch.Kind)
+			}
+			if ch.Kind == "telegram" && strings.TrimSpace(ch.ChatID.Raw) == "" {
+				return fmt.Errorf("notifications[%d]: telegram requires chat_id", i)
 			}
 		case "email":
 			if ch.SMTP.Host == "" || ch.From == "" || len(ch.To) == 0 {
@@ -407,7 +411,7 @@ func (c *Config) validateNotifications() error {
 				return fmt.Errorf("notifications[%d]: unsupported smtp.tls %q (want starttls|implicit)", i, ch.SMTP.TLS)
 			}
 		default:
-			return fmt.Errorf("notifications[%d]: unsupported kind %q (want webhook|email)", i, ch.Kind)
+			return fmt.Errorf("notifications[%d]: unsupported kind %q (want webhook|slack|telegram|email)", i, ch.Kind)
 		}
 		for _, ev := range ch.Events {
 			if !notifyEventKinds[ev] {

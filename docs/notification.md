@@ -11,19 +11,31 @@ Each channel may subscribe to a subset with `events:`; omit it to receive all ki
 
 ## Backends
 
-### webhook (Telegram-compatible)
+### webhook / slack / telegram
 
-POSTs JSON `{ "chat_id"?, "text", "event", "environment", "commit", "by", "timestamp" }`. A
-Telegram Bot API `sendMessage` URL uses `chat_id` + `text`; a generic sink reads the structured
-fields.
+`kind: webhook`, `kind: slack`, and `kind: telegram` are thin wrappers over one webhook
+core: gantry POSTs JSON to `url`. They differ only in the payload shape they send:
+
+| kind | payload | notes |
+| --- | --- | --- |
+| `webhook` | `{ "text", "event", "environment", "commit", "by", "timestamp" }` | The generic structured payload a custom sink reads. |
+| `slack` | `{ "text": … }` | The minimal body a Slack incoming-webhook accepts. |
+| `telegram` | `{ "chat_id": …, "text": … }` | A Telegram Bot API `sendMessage` body; requires `chat_id`. |
 
 ```yaml
 notifications:
   - kind: webhook
-    url: ${env:GANTRY_WEBHOOK_URL}          # https://api.telegram.org/bot<token>/sendMessage
-    chat_id: ${env:GANTRY_TELEGRAM_CHAT_ID} # optional
+    url: ${env:GANTRY_WEBHOOK_URL}          # a custom JSON sink
     events: [deployed, promoted, rolled_back, verify_failed, drift_alarm]
+  - kind: slack
+    url: ${env:GANTRY_SLACK_WEBHOOK_URL}    # a Slack incoming webhook
+  - kind: telegram
+    url: https://api.telegram.org/bot<token>/sendMessage
+    chat_id: ${env:GANTRY_TELEGRAM_CHAT_ID} # required for telegram
 ```
+
+All three require `url`. `telegram` additionally requires `chat_id`; `slack` and `webhook`
+ignore it.
 
 ### email
 
