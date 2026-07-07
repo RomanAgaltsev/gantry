@@ -39,6 +39,10 @@ registries:
 
 - `${cmd:…}` splits its arg on whitespace and runs `prog a b`; commands that need shell
   quoting should be wrapped in a script.
+- `${cmd:…}` runs an arbitrary host command by design, and `${cmd:…}`/`${sops:…}`/`${vault:…}`
+  inherit gantry's full environment. The config is trusted — see the
+  [security model](security.md) for why that is acceptable and what it implies for who may edit
+  `gantry.yaml`.
 - `${sops:path}` with **no** `#key` returns the whole trimmed decrypted output as the secret.
 - `${vault:mount/path#field}` reads a single field; the Vault address/token come from the
   `secrets.vault` block (below).
