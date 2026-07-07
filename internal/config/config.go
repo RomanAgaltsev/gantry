@@ -167,10 +167,11 @@ type ComponentSource struct {
 // DaemonConfig configures `gantry serve`. Optional; every field defaults so an existing
 // config runs the daemon with sane values.
 type DaemonConfig struct {
-	Interval         Duration `yaml:"interval"`          // reconcile period; default 60s
-	Listen           string   `yaml:"listen"`            // HTTP bind address; default ":9713"
-	ReconcileTimeout Duration `yaml:"reconcile_timeout"` // per-env reconcile deadline; default 5m
-	Doorbell         Doorbell `yaml:"doorbell"`          // C3c; disabled by default
+	Interval              Duration `yaml:"interval"`                // reconcile period; default 60s
+	Listen                string   `yaml:"listen"`                  // HTTP bind address; default ":9713"
+	ReconcileTimeout      Duration `yaml:"reconcile_timeout"`       // per-env reconcile deadline; default 5m
+	ReconcileFailedRepeat Duration `yaml:"reconcile_failed_repeat"` // suppress repeat reconcile_failed alerts; default 1h
+	Doorbell              Doorbell `yaml:"doorbell"`                // C3c; disabled by default
 }
 
 // Doorbell configures the optional forge-webhook trigger (C3c).
@@ -387,7 +388,7 @@ func validateBlueGreen(env Environment) error {
 
 var notifyEventKinds = map[string]bool{
 	"deployed": true, "promoted": true, "rolled_back": true,
-	"verify_failed": true, "drift_alarm": true,
+	"verify_failed": true, "drift_alarm": true, "reconcile_failed": true,
 }
 
 //nolint:gocognit // the per-kind switch is naturally a flat dispatch; splitting it hurts readability
@@ -415,7 +416,7 @@ func (c *Config) validateNotifications() error {
 		}
 		for _, ev := range ch.Events {
 			if !notifyEventKinds[ev] {
-				return fmt.Errorf("notifications[%d]: unknown event %q (want deployed|promoted|rolled_back|verify_failed|drift_alarm)", i, ev)
+				return fmt.Errorf("notifications[%d]: unknown event %q (want deployed|promoted|rolled_back|verify_failed|drift_alarm|reconcile_failed)", i, ev)
 			}
 		}
 	}
@@ -433,6 +434,9 @@ func (c *Config) defaultDaemon() {
 	}
 	if c.Daemon.ReconcileTimeout.Duration() == 0 {
 		c.Daemon.ReconcileTimeout = DurationOf(5 * time.Minute)
+	}
+	if c.Daemon.ReconcileFailedRepeat.Duration() == 0 {
+		c.Daemon.ReconcileFailedRepeat = DurationOf(1 * time.Hour)
 	}
 	if c.Daemon.Doorbell.Path == "" {
 		c.Daemon.Doorbell.Path = "/hooks/forge"

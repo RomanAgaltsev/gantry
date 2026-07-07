@@ -20,7 +20,7 @@ func eventsFor(env string, res engine.SyncResult, err error) []notify.Event {
 	case err != nil && res.VerifyFailed:
 		return []notify.Event{{Kind: "verify_failed", Environment: env, Time: now, Message: err.Error()}}
 	case err != nil:
-		return nil // a plain reconcile error is logged/metered; not every error is a notifiable event
+		return []notify.Event{{Kind: "reconcile_failed", Environment: env, Time: now, Message: "reconcile failed: " + err.Error()}}
 	case res.Deployed:
 		return []notify.Event{{Kind: "deployed", Environment: env, Time: now, Message: "reconciled"}}
 	default:

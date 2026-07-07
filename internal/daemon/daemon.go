@@ -28,14 +28,16 @@ func (nopObserver) DriftObserved(string, float64)                               
 
 // Deps are the long-lived collaborators a reconcile needs, built once by the serve command.
 type Deps struct {
-	Cfg              *config.Config
-	Forge            forge.Forge
-	Store            engine.PinStore
-	Ledger           ledger.Ledger
-	Dispatch         notify.Dispatcher
-	ExecFor          func(env config.Environment) (executor.Executor, verify.Verifier, error)
-	Metrics          Observer      // nil ⇒ nopObserver
-	ReconcileTimeout time.Duration // per-env reconcile deadline; 0 ⇒ no deadline
+	Cfg                   *config.Config
+	Forge                 forge.Forge
+	Store                 engine.PinStore
+	Ledger                ledger.Ledger
+	Dispatch              notify.Dispatcher
+	ExecFor               func(env config.Environment) (executor.Executor, verify.Verifier, error)
+	Metrics               Observer           // nil ⇒ nopObserver
+	ReconcileTimeout      time.Duration      // per-env reconcile deadline; 0 ⇒ no deadline
+	Suppressor            *failureSuppressor // nil ⇒ default built in Run from ReconcileFailedRepeat
+	ReconcileFailedRepeat time.Duration      // window for collapsing flapping reconcile_failed alerts
 }
 
 // Options tunes the loop.
@@ -49,6 +51,13 @@ type Options struct {
 func Run(ctx context.Context, d Deps, o Options) error {
 	if d.Metrics == nil {
 		d.Metrics = nopObserver{}
+	}
+	if d.Suppressor == nil {
+		window := d.ReconcileFailedRepeat
+		if window <= 0 {
+			window = time.Hour
+		}
+		d.Suppressor = newFailureSuppressor(window)
 	}
 	log := logging.From(ctx)
 	log.Info("daemon started", "interval", o.Interval.String())
@@ -114,7 +123,13 @@ func reconcileEnv(ctx context.Context, d Deps, env config.Environment) {
 	} else if res.Deployed {
 		log.Info("reconciled", "env", env.Name, "changes", len(res.Changes))
 	}
-	d.Dispatch.Dispatch(ctx, eventsFor(env.Name, res, err)...)
+	evs := eventsFor(env.Name, res, err)
+	// Collapse flapping reconcile_failed alerts to one per window; emit a recovery note on
+	// the first success after a failing streak (D7).
+	if d.Suppressor != nil {
+		evs = d.Suppressor.filter(env.Name, evs, err != nil, time.Now())
+	}
+	d.Dispatch.Dispatch(ctx, evs...)
 }
 
 func observeDrift(ctx context.Context, d Deps) {
