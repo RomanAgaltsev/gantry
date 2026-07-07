@@ -3,7 +3,10 @@ package notify
 import (
 	"context"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -44,6 +47,49 @@ func TestDispatch_BestEffort(t *testing.T) {
 	// Must not panic or stop at the failing channel, and returns nothing.
 	d.Dispatch(context.Background(), Event{Kind: "deployed"})
 	require.Len(t, ok.got, 1) // the second channel still received it
+}
+
+type notifierFunc func(context.Context, Event) error
+
+func (f notifierFunc) Notify(ctx context.Context, e Event) error { return f(ctx, e) }
+
+func waitTimeout(t *testing.T, wg *sync.WaitGroup, d time.Duration) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(d):
+		t.Fatal("timed out waiting for concurrent notifiers")
+	}
+}
+
+func TestDispatch_SendsChannelsConcurrently(t *testing.T) {
+	const n = 4
+	var wg sync.WaitGroup
+	wg.Add(n)
+	barrier := make(chan struct{})
+	var got int64
+	mk := func() Notifier {
+		return notifierFunc(func(context.Context, Event) error {
+			wg.Done()
+			<-barrier // block until all n have arrived ⇒ proves concurrency
+			atomic.AddInt64(&got, 1)
+			return nil
+		})
+	}
+	d := make(Dispatcher, 0, n)
+	for range n {
+		d = append(d, Channel{Notifier: mk()})
+	}
+	done := make(chan struct{})
+	go func() { d.Dispatch(context.Background(), Event{Kind: "deployed"}); close(done) }()
+
+	// All n notifiers must be in-flight simultaneously (sequential dispatch would deadlock here).
+	waitTimeout(t, &wg, time.Second)
+	close(barrier)
+	<-done
+	require.Equal(t, int64(n), atomic.LoadInt64(&got))
 }
 
 // TestEventKindsMatchConfigValidation guards the single-source-of-truth contract between the

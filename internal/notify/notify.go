@@ -4,6 +4,7 @@ package notify
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/RomanAgaltsev/gantry/internal/logging"
@@ -54,23 +55,30 @@ func (c Channel) wants(kind string) bool {
 // Dispatcher fans events out to channels.
 type Dispatcher []Channel
 
-// Dispatch sends each event to every subscribed channel, sequentially and best-effort: a
-// channel error is logged via the context logger and skipped, never returned, so a broken
-// notification destination can never fail a gantry command. Each send is bounded by a
-// per-channel timeout, and dispatch runs synchronously so a one-shot CLI run finishes sending
-// before the process exits.
+// Dispatch sends each event to every subscribed channel. For a single event the subscribed
+// channels are sent concurrently (P4) so slow destinations don't serialize a one-shot CLI run;
+// events themselves are processed in order. Each send is bounded by a per-channel timeout and
+// best-effort: a channel error is logged via the context logger and skipped, never returned, so
+// a broken notification destination can never fail a gantry command. Dispatch runs synchronously
+// so a one-shot CLI run finishes sending before the process exits.
 func (d Dispatcher) Dispatch(ctx context.Context, events ...Event) {
 	log := logging.From(ctx)
 	for _, e := range events {
+		var wg sync.WaitGroup
 		for _, ch := range d {
 			if !ch.wants(e.Kind) {
 				continue
 			}
-			cctx, cancel := context.WithTimeout(ctx, defaultChannelTimeout)
-			if err := ch.Notifier.Notify(cctx, e); err != nil {
-				log.Warn("notification failed", "event", e.Kind, "env", e.Environment, "error", err)
-			}
-			cancel()
+			wg.Add(1)
+			go func(ch Channel) {
+				defer wg.Done()
+				cctx, cancel := context.WithTimeout(ctx, defaultChannelTimeout)
+				defer cancel()
+				if err := ch.Notifier.Notify(cctx, e); err != nil {
+					log.Warn("notification failed", "event", e.Kind, "env", e.Environment, "error", err)
+				}
+			}(ch)
 		}
+		wg.Wait() // finish this event's fan-out before the next, and before the CLI process exits
 	}
 }
