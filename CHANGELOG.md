@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.16.0](https://github.com/RomanAgaltsev/gantry/compare/v0.15.0...v0.16.0) (2026-07-07)
+
+
+### Features
+
+* **notify:** support implicit-TLS SMTP and an explicit smtp.tls choice (C9) ([b7e9543](https://github.com/RomanAgaltsev/gantry/commit/b7e9543a4aae33d1b85df340adf1dc0ce98a0834))
+
+
+### Bug Fixes
+
+* **cli:** error on a bad serve --interval and accept the day suffix (C4) ([edb2341](https://github.com/RomanAgaltsev/gantry/commit/edb23410941d9755402b2b0fa2c89f908418b01b))
+* correctness ([ab3a174](https://github.com/RomanAgaltsev/gantry/commit/ab3a174bf826611949b720cdf657029f34905a4b))
+* **daemon:** bound each environment's reconcile with daemon.reconcile_timeout (C2) ([0ddea70](https://github.com/RomanAgaltsev/gantry/commit/0ddea700d7177b979cf8f4f7a14e2ee03068cf6c))
+* **daemon:** close pooled SSH connection after each reconcile (C3) ([e4801ed](https://github.com/RomanAgaltsev/gantry/commit/e4801ed3c1fd89448d7f5a198e62d39c4abf2110))
+* **daemon:** reset drift gauge on resolve and report oldest drifted component (C1) ([0efd1b1](https://github.com/RomanAgaltsev/gantry/commit/0efd1b15455db0c8ff506f064b2ee4bef782bb5f))
+* **lock:** close TOCTOU in stale-lock steal so exactly one racer wins (C6) ([f0caa9f](https://github.com/RomanAgaltsev/gantry/commit/f0caa9f5154bd4fc866e286e64725b9263ff0280))
+* **lock:** mutating verbs acquire the lock; steal a stale lock atomically (C6) ([0126ad9](https://github.com/RomanAgaltsev/gantry/commit/0126ad9ef844d4827a3306d0ffe27de454b5575e))
+* **notify:** render drift-alarm durations with one shared formatter (C8) ([5855d86](https://github.com/RomanAgaltsev/gantry/commit/5855d8683ee56ed1ceec99986d8c4d08ae0b3cfe))
+* **pin:** reject duplicate keys in a pin file instead of silently keeping the last (C7) ([53171c9](https://github.com/RomanAgaltsev/gantry/commit/53171c9d55edf08c58845a0d5caa72ca17a76d63))
+* **status:** degrade a failing component to (error) instead of failing the matrix (C5) ([50c49c7](https://github.com/RomanAgaltsev/gantry/commit/50c49c7ebc3b02e8215327fb98cc359f34d5f3f4))
+
 ## [0.15.0](https://github.com/RomanAgaltsev/gantry/compare/v0.14.0...v0.15.0) (2026-07-03)
 
 
