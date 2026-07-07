@@ -279,3 +279,17 @@ no extra header is needed beyond the webhook secret you configure on the GitHub 
 
 The C3 daemon slices (core loop, metrics, doorbell) are complete, including GitHub HMAC
 signing (`X-Hub-Signature-256`, behind `doorbell.hmac`).
+
+### Ledger growth
+
+The deploy ledger (`.gantry/deploys.jsonl`) is append-only — one JSON line per deploy, one
+commit per deploy. Parsed entries are cached keyed on the file's mtime and reused across all
+queries (`lookup`, `latest green`, `history`, `latest healthy`) within a reconcile cycle, and
+the cache is invalidated on every `Record`, so a busy cycle parses the file once rather than
+once per query. At a 60s interval that turns a full-file parse per env per cycle into a parse
+per cycle.
+
+For very long-lived deployments with tens of thousands of entries the file still grows
+without bound. A future compaction step (truncate entries older than a threshold while keeping
+the newest green per env) is the next shelf item (D4) — the on-disk format change is deferred
+until someone hits the size where parsing becomes noticeable.

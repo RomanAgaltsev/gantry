@@ -91,3 +91,30 @@ func TestLatestHealthy(t *testing.T) {
 	_, ok = latestHealthy([]Entry{{Environment: "test", Result: ResultOK, Healthy: HealthUnknown}}, "test")
 	require.False(t, ok)
 }
+
+func TestGitLedger_CachesUntilWrite(t *testing.T) {
+	l, err := NewGitLedger(newRepo(t), sig())
+	require.NoError(t, err)
+	gl := l.(*gitLedger) // same-package access to the parse counter
+
+	require.NoError(t, l.Record(context.Background(), Entry{Environment: "test", PinCommit: "a", Result: ResultOK, Healthy: HealthTrue, DeployedAt: time.Now(), By: "sync"}))
+	h1, err := l.History(context.Background(), "test")
+	require.NoError(t, err)
+	require.Len(t, h1, 1)
+
+	// Repeated reads with no intervening write must reuse the parse (cache hit).
+	before := gl.parses
+	h2, err := l.History(context.Background(), "test")
+	require.NoError(t, err)
+	require.Equal(t, h1, h2)
+	_, err = l.LatestGreen(context.Background(), "test")
+	require.NoError(t, err)
+	require.Equal(t, before, gl.parses, "repeated reads with no write must not re-parse")
+
+	// A write invalidates: the next read re-parses and sees the new entry.
+	require.NoError(t, l.Record(context.Background(), Entry{Environment: "test", PinCommit: "b", Result: ResultOK, Healthy: HealthTrue, DeployedAt: time.Now(), By: "sync"}))
+	h3, err := l.History(context.Background(), "test")
+	require.NoError(t, err)
+	require.Len(t, h3, 2)
+	require.Greater(t, gl.parses, before)
+}
