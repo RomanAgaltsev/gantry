@@ -166,9 +166,10 @@ type ComponentSource struct {
 // DaemonConfig configures `gantry serve`. Optional; every field defaults so an existing
 // config runs the daemon with sane values.
 type DaemonConfig struct {
-	Interval Duration `yaml:"interval"` // reconcile period; default 60s
-	Listen   string   `yaml:"listen"`   // HTTP bind address; default ":9713"
-	Doorbell Doorbell `yaml:"doorbell"` // C3c; disabled by default
+	Interval         Duration `yaml:"interval"`          // reconcile period; default 60s
+	Listen           string   `yaml:"listen"`            // HTTP bind address; default ":9713"
+	ReconcileTimeout Duration `yaml:"reconcile_timeout"` // per-env reconcile deadline; default 5m
+	Doorbell         Doorbell `yaml:"doorbell"`          // C3c; disabled by default
 }
 
 // Doorbell configures the optional forge-webhook trigger (C3c).
@@ -420,6 +421,9 @@ func (c *Config) defaultDaemon() {
 	if c.Daemon.Listen == "" {
 		c.Daemon.Listen = ":9713"
 	}
+	if c.Daemon.ReconcileTimeout.Duration() == 0 {
+		c.Daemon.ReconcileTimeout = DurationOf(5 * time.Minute)
+	}
 	if c.Daemon.Doorbell.Path == "" {
 		c.Daemon.Doorbell.Path = "/hooks/forge"
 	}
@@ -442,6 +446,9 @@ func (c *Config) validateDaemon() error {
 	}
 	if c.Daemon.Listen == "" {
 		return errors.New("daemon.listen must not be empty")
+	}
+	if c.Daemon.ReconcileTimeout.Duration() < time.Second {
+		return errors.New("daemon.reconcile_timeout must be at least 1s")
 	}
 	if c.Daemon.Doorbell.Enabled && strings.TrimSpace(c.Daemon.Doorbell.Secret.Raw) == "" {
 		return errors.New("daemon.doorbell.enabled requires a doorbell.secret")

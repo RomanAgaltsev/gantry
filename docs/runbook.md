@@ -90,7 +90,10 @@ gantry serve --interval 15s
   (`sync`/`deploy`/`promote`/`rollback`/`switch`) refuse with
   *"a gantry daemon is reconciling this repo"*. A stale lock (dead owner, or >24h old) is
   reclaimed automatically.
-- **Health:** `/healthz` returns `ok` on the listen address (default `:9713`).
+- **Health:** `/healthz` returns `ok` on the listen address (default `:9713`). A
+  stuck remote host (e.g. a wedged `docker compose pull`) no longer blocks the whole loop:
+  that environment's reconcile fails after `daemon.reconcile_timeout` (default `5m`) and the
+  loop keeps reconciling the others, with `/healthz` still answering `ok`.
 - **Metrics:** scrape `/metrics` on the same port. Watch `gantry_drift_age_seconds` (a
   component lagging its release past your threshold) and `gantry_verify_failures_total`
   rising (reconciles that deployed but failed verification).

@@ -94,3 +94,31 @@ func TestObserveDrift_ReportsMaxAndClearsWhenResolved(t *testing.T) {
 	require.Equal(t, "test", obs.drift[0].env)
 	require.Equal(t, 0.0, obs.drift[1].age, "gauge must reset to 0 when drift resolves")
 }
+
+// blockingExec blocks in Deploy until ctx is cancelled, modelling a wedged `compose pull`.
+type blockingExec struct{}
+
+func (blockingExec) Deploy(ctx context.Context, _ executor.Plan) (executor.Result, error) {
+	<-ctx.Done()
+	return executor.Result{}, ctx.Err()
+}
+
+func TestReconcileEnv_PerCycleTimeoutUnblocksWedgedDeploy(t *testing.T) {
+	d := Deps{
+		Cfg:              oneTrackEnv(t),
+		Forge:            fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v1"}},
+		Store:            newFakeStore(),
+		Ledger:           newFakeLedger(),
+		ExecFor:          func(config.Environment) (executor.Executor, verify.Verifier, error) { return blockingExec{}, nil, nil },
+		ReconcileTimeout: 20 * time.Millisecond,
+	} // Dispatch left nil: Dispatcher.Dispatch on a nil slice is a no-op
+	d.Metrics = nopObserver{} // reconcileEnv is driven directly, not via Run which sets the nop default
+
+	done := make(chan struct{})
+	go func() { reconcileEnv(context.Background(), d, d.Cfg.Environments[0]); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("reconcileEnv did not return; per-cycle timeout not applied")
+	}
+}

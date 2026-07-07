@@ -28,13 +28,14 @@ func (nopObserver) DriftObserved(string, float64)                               
 
 // Deps are the long-lived collaborators a reconcile needs, built once by the serve command.
 type Deps struct {
-	Cfg      *config.Config
-	Forge    forge.Forge
-	Store    engine.PinStore
-	Ledger   ledger.Ledger
-	Dispatch notify.Dispatcher
-	ExecFor  func(env config.Environment) (executor.Executor, verify.Verifier, error)
-	Metrics  Observer // nil ⇒ nopObserver
+	Cfg              *config.Config
+	Forge            forge.Forge
+	Store            engine.PinStore
+	Ledger           ledger.Ledger
+	Dispatch         notify.Dispatcher
+	ExecFor          func(env config.Environment) (executor.Executor, verify.Verifier, error)
+	Metrics          Observer      // nil ⇒ nopObserver
+	ReconcileTimeout time.Duration // per-env reconcile deadline; 0 ⇒ no deadline
 }
 
 // Options tunes the loop.
@@ -85,6 +86,14 @@ func reconcileEnv(ctx context.Context, d Deps, env config.Environment) {
 	if err != nil {
 		log.Warn("skipping environment; executor build failed", "env", env.Name, "error", err)
 		return
+	}
+	// Bound each environment's reconcile so a wedged remote command (e.g. a stuck
+	// `docker compose pull`) cannot block the whole loop until shutdown (C2). The SSH
+	// runner unblocks on ctx cancellation.
+	if d.ReconcileTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, d.ReconcileTimeout)
+		defer cancel()
 	}
 	start := time.Now()
 	res, err := engine.Sync(ctx, d.Cfg, env.Name, d.Forge, ex, vf, d.Store, d.Ledger, engine.SyncOptions{})
