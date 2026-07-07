@@ -27,3 +27,21 @@ jobs:
           files: coverage.out
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  fuzz-smoke:
+    # A short, bounded run of each fuzz target (seed corpus also runs under the test job).
+    # Opt-in smoke, not an unbounded fuzzing campaign.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: short fuzz smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./internal/pin/ -run x -fuzz FuzzRead -fuzztime 20s
+          go test ./internal/forge/ -run x -fuzz FuzzParseMetadata -fuzztime 20s
+          go test ./internal/verify/ -run x -fuzz FuzzParseComposePS -fuzztime 20s
+          go test ./internal/executor/composessh/ -run x -fuzz FuzzShellQuote -fuzztime 20s
