@@ -56,6 +56,18 @@ for that environment on that tick — the loop keeps going; the failure is logge
 matches [verification.md](verification.md): a `verify_on_failure: rollback` environment
 auto-reverts to its last known-good set inside the loop, just as in CLI mode.
 
+### Release fetching: once per cycle
+
+Each component's latest release is resolved **once per cycle** and shared by every
+environment's `Sync` and the drift observation, rather than re-fetched per environment and
+again for drift. The daemon wraps the forge in a short-TTL cache (the TTL is the reconcile
+`interval`) and clears it at the top of every cycle, so a cycle that reconciles three
+track-mode environments does `C` forge calls (one per component), not `2·C·E`.
+
+A doorbell-rung cycle within the same TTL reuses that cached snapshot, so a burst of forge
+webhooks collapses to re-reading the already-fetched releases instead of multiplying calls
+against the forge's API.
+
 ## The single-writer lock
 
 `serve` takes an advisory lock at `<repo>/.gantry/serve.lock` before it starts looping,

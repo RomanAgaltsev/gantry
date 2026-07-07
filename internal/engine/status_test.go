@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -78,6 +79,32 @@ func TestStatusMatrix_DegradesPerCellOnForgeError(t *testing.T) {
 	require.Equal(t, "(error)", m.Latest["SVC_IMAGE"], "failing cell degrades to the (error) sentinel")
 	require.Equal(t, ok.ImageRef(), m.Latest["PG_IMAGE"], "healthy component still resolves")
 	require.False(t, m.Drift["test"]["SVC_IMAGE"], "an error cell never counts as drift")
+}
+
+func TestStatusMatrix_ParallelFetchIsOrderedAndComplete(t *testing.T) {
+	comps := make([]config.Component, 0, 12)
+	keys := make([]string, 12)
+	for i := range 12 {
+		id := fmt.Sprintf("svc%d", i)
+		keys[i] = fmt.Sprintf("SVC%d_IMAGE", i)
+		comps = append(comps, config.Component{
+			ID: id, Project: "g/" + id, PinKey: keys[i],
+			Source: config.ComponentSource{Forge: "release"},
+		})
+	}
+	cfg := &config.Config{
+		Components:   comps,
+		Environments: []config.Environment{{Name: "test", Source: config.Source{Track: "latest"}, PinFile: "f"}},
+	}
+	store := &fakeStore{byFile: map[string]pin.Set{"f": {}}}
+	f := fakeForge{rel: forge.Release{ImageRepository: "reg/x", ImageTag: "v1"}}
+
+	m, err := (&Engine{Cfg: cfg, Forge: f, Store: store, Ledger: &fakeLedger{}}).StatusMatrix(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, keys, m.Components) // config order preserved despite parallel fetch
+	for _, k := range keys {
+		require.Equal(t, "reg/x:v1", m.Latest[k])
+	}
 }
 
 // perIDErrForge fails LatestRelease for one component ID and succeeds (fixed release) for others.

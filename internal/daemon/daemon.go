@@ -77,6 +77,12 @@ func Run(ctx context.Context, d Deps, o Options) error {
 }
 
 func reconcileAll(ctx context.Context, d Deps) {
+	// Clear the per-cycle release cache at the top of each cycle so each component's latest release
+	// is fetched once per cycle and shared by every env's Sync and drift observation (P1). Within
+	// the cycle the cache TTL (the reconcile interval) keeps the snapshot stable.
+	if c, ok := d.Engine.Forge.(interface{ Clear() }); ok {
+		c.Clear()
+	}
 	syncer, canSync := d.Engine.Store.(engine.RemoteSyncer)
 	if d.RemotePull && canSync {
 		if err := syncer.PullFF(ctx); err != nil {
