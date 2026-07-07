@@ -63,20 +63,36 @@ func TestStatusMatrix_GridDriftHealth(t *testing.T) {
 	require.False(t, m.Health[1].HasData) // prod has no ledger entry
 }
 
-func TestStatusMatrix_ForgeErrorPropagates(t *testing.T) {
+func TestStatusMatrix_DegradesPerCellOnForgeError(t *testing.T) {
+	ok := forge.Release{ImageRepository: "reg/pg", ImageTag: "v9", BuiltAt: time.Now()}
 	cfg := &config.Config{
-		Components:   []config.Component{{ID: "svc", PinKey: "SVC_IMAGE", Source: config.ComponentSource{Forge: "release"}}},
+		Components: []config.Component{
+			{ID: "svc", Project: "g/svc", PinKey: "SVC_IMAGE", Source: config.ComponentSource{Forge: "release"}},
+			{ID: "pg", Project: "g/pg", PinKey: "PG_IMAGE", Source: config.ComponentSource{Forge: "release"}},
+		},
 		Environments: []config.Environment{{Name: "test", Source: config.Source{Track: "latest"}, PinFile: "f"}},
 	}
-	store := &fakeStore{byFile: map[string]pin.Set{"f": {}}}
-	_, err := StatusMatrix(context.Background(), cfg, errForge{}, store, &fakeLedger{})
-	require.Error(t, err)
+	store := &fakeStore{byFile: map[string]pin.Set{"f": {"SVC_IMAGE": "reg/svc:v1", "PG_IMAGE": "reg/pg:v9"}}}
+	m, err := StatusMatrix(context.Background(), cfg, perIDErrForge{failID: "svc", rel: ok}, store, &fakeLedger{})
+	require.NoError(t, err, "one bad component must not fail the whole matrix (C5)")
+	require.Equal(t, "(error)", m.Latest["SVC_IMAGE"], "failing cell degrades to the (error) sentinel")
+	require.Equal(t, ok.ImageRef(), m.Latest["PG_IMAGE"], "healthy component still resolves")
+	require.False(t, m.Drift["test"]["SVC_IMAGE"], "an error cell never counts as drift")
 }
 
-type errForge struct{}
+// perIDErrForge fails LatestRelease for one component ID and succeeds (fixed release) for others.
+type perIDErrForge struct {
+	failID string
+	rel    forge.Release
+}
 
-func (errForge) LatestRelease(context.Context, forge.Component) (forge.Release, error) {
-	return forge.Release{}, errForgeFail
+func (f perIDErrForge) LatestRelease(_ context.Context, c forge.Component) (forge.Release, error) {
+	if c.ID == f.failID {
+		return forge.Release{}, errForgeFail
+	}
+	r := f.rel
+	r.Component = c.ID
+	return r, nil
 }
 
 var errForgeFail = testError("forge down")

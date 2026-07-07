@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,14 +32,37 @@ func lockPath(repoOrConfig string) string {
 	return filepath.Join(dir, ".gantry", "serve.lock")
 }
 
-// guardServe returns an error when a fresh daemon lock holds the repo, so the mutating CLI
-// verbs refuse to run concurrently with `gantry serve` (C3-D4).
-func guardServe(cmd *cobra.Command) error {
+// acquireServeLock takes the single-writer serve lock so a mutating CLI verb cannot run
+// concurrently with `gantry serve` or another mutating verb (C6 — verbs now Acquire the
+// same lock the daemon does, rather than merely peeking with CheckFree). The returned
+// release func drops the lock and must be deferred by the caller.
+func acquireServeLock(cmd *cobra.Command) (func(), error) {
 	path, err := cmd.Flags().GetString("config")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return daemon.CheckFree(lockPath(path))
+	lp := lockPath(path)
+	if err := os.MkdirAll(filepath.Dir(lp), 0o750); err != nil {
+		return nil, err
+	}
+	lock, err := daemon.Acquire(lp)
+	if err != nil {
+		return nil, err
+	}
+	return func() { _ = lock.Release() }, nil //nolint:gosec // best-effort lock release
+}
+
+// resolveInterval picks the daemon interval: the --interval flag when set (parsed with the
+// day-suffix-aware config.ParseDuration so "1d" works and a typo errors), else cfgDefault.
+func resolveInterval(flag string, cfgDefault time.Duration) (time.Duration, error) {
+	if flag == "" {
+		return cfgDefault, nil
+	}
+	d, err := config.ParseDuration(flag)
+	if err != nil {
+		return 0, fmt.Errorf("--interval %q: %w", flag, err)
+	}
+	return d, nil
 }
 
 func newServeCmd() *cobra.Command {
@@ -97,11 +121,9 @@ func runServe(cmd *cobra.Command, interval string) error {
 	}
 	defer func() { _ = lock.Release() }() //nolint:gosec // best-effort lock release on shutdown
 
-	ivl := cfg.Daemon.Interval.Duration()
-	if interval != "" {
-		if d, perr := time.ParseDuration(interval); perr == nil {
-			ivl = d
-		}
+	ivl, err := resolveInterval(interval, cfg.Daemon.Interval.Duration())
+	if err != nil {
+		return err
 	}
 
 	srv := &http.Server{
@@ -153,6 +175,7 @@ func serveDeps(cfg *config.Config, path string, res config.SecretResolver) (*dae
 	return &daemon.Deps{
 		Cfg: cfg, Forge: forgeClient, Store: store, Ledger: led,
 		Dispatch: disp, ExecFor: execFor(res, cfg),
+		ReconcileTimeout: cfg.Daemon.ReconcileTimeout.Duration(),
 	}, nil
 }
 

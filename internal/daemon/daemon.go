@@ -28,13 +28,14 @@ func (nopObserver) DriftObserved(string, float64)                               
 
 // Deps are the long-lived collaborators a reconcile needs, built once by the serve command.
 type Deps struct {
-	Cfg      *config.Config
-	Forge    forge.Forge
-	Store    engine.PinStore
-	Ledger   ledger.Ledger
-	Dispatch notify.Dispatcher
-	ExecFor  func(env config.Environment) (executor.Executor, verify.Verifier, error)
-	Metrics  Observer // nil ⇒ nopObserver
+	Cfg              *config.Config
+	Forge            forge.Forge
+	Store            engine.PinStore
+	Ledger           ledger.Ledger
+	Dispatch         notify.Dispatcher
+	ExecFor          func(env config.Environment) (executor.Executor, verify.Verifier, error)
+	Metrics          Observer      // nil ⇒ nopObserver
+	ReconcileTimeout time.Duration // per-env reconcile deadline; 0 ⇒ no deadline
 }
 
 // Options tunes the loop.
@@ -86,6 +87,24 @@ func reconcileEnv(ctx context.Context, d Deps, env config.Environment) {
 		log.Warn("skipping environment; executor build failed", "env", env.Name, "error", err)
 		return
 	}
+	defer func() {
+		// The runner caches a pooled SSH connection; the daemon builds a fresh executor per env
+		// per cycle, so releasing it here avoids leaking one TCP+SSH connection per deploying
+		// cycle (C3). The one-shot CLI still relies on process exit.
+		if rc, ok := ex.(executor.RunnerCloser); ok {
+			if cerr := rc.CloseRunner(); cerr != nil {
+				logging.From(ctx).Warn("closing runner after reconcile", "env", env.Name, "error", cerr)
+			}
+		}
+	}()
+	// Bound each environment's reconcile so a wedged remote command (e.g. a stuck
+	// `docker compose pull`) cannot block the whole loop until shutdown (C2). The SSH
+	// runner unblocks on ctx cancellation.
+	if d.ReconcileTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, d.ReconcileTimeout)
+		defer cancel()
+	}
 	start := time.Now()
 	res, err := engine.Sync(ctx, d.Cfg, env.Name, d.Forge, ex, vf, d.Store, d.Ledger, engine.SyncOptions{})
 	dur := time.Since(start)
@@ -107,11 +126,23 @@ func observeDrift(ctx context.Context, d Deps) {
 		if err != nil {
 			continue // drift is a best-effort signal in the loop; a forge blip is logged elsewhere
 		}
-		for _, it := range rep.Items {
-			d.Metrics.DriftObserved(env.Name, it.Age.Seconds())
-		}
+		// Write the gauge every pass so it resets to 0 when drift resolves (C1); report the
+		// max age (the oldest drifted component), not whichever item was last in config order.
+		d.Metrics.DriftObserved(env.Name, maxDriftAge(rep))
 		if rep.Drifted() {
 			d.Dispatch.Dispatch(ctx, driftEvent(env.Name, rep)...)
 		}
 	}
+}
+
+// maxDriftAge returns the age in seconds of the oldest drifted component in rep, or 0 when
+// nothing drifted (which clears the drift gauge for the environment).
+func maxDriftAge(rep engine.DriftReport) float64 {
+	var max float64
+	for _, it := range rep.Items {
+		if s := it.Age.Seconds(); s > max {
+			max = s
+		}
+	}
+	return max
 }

@@ -28,7 +28,7 @@ func buildNotifier(res config.SecretResolver, channels []config.NotifyChannel) (
 				return nil, err
 			}
 			d = append(d, notify.Channel{
-				Notifier: notify.NewEmailNotifier(ch.SMTP.Host, ch.SMTP.Port, ch.SMTP.Username, pw, ch.From, ch.To),
+				Notifier: notify.NewEmailNotifier(ch.SMTP.Host, ch.SMTP.Port, ch.SMTP.Username, pw, ch.From, ch.To, ch.SMTP.TLS),
 				Events:   events,
 			})
 		}

@@ -82,10 +82,10 @@ func (r *sshRunner) Run(ctx context.Context, cmd string, stdin []byte) (string, 
 	}
 }
 
-// dial returns a connected SSH client, dialing once and caching it so a deploy's
-// several commands (env write, login, pull, up) share one TCP+SSH handshake. The
-// client lives for the process lifetime; gantry is a short-lived CLI, so it is
-// closed by process exit rather than an explicit Close.
+// dial returns a connected SSH client, dialing once and caching it so a deploy's several
+// commands (env write, login, pull, up) share one TCP+SSH handshake. The one-shot CLI relies
+// on process exit to drop the connection; the long-running daemon must call Close after each
+// reconcile (C3) so it does not leak a client per deploying cycle.
 func (r *sshRunner) dial(ctx context.Context) (*ssh.Client, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -103,6 +103,19 @@ func (r *sshRunner) dial(ctx context.Context) (*ssh.Client, error) {
 	}
 	r.client = ssh.NewClient(c, chans, reqs)
 	return r.client, nil
+}
+
+// Close drops the cached SSH client so the next dial reconnects. Idempotent and safe on an
+// undialed runner. The daemon calls this after each environment's reconcile (C3).
+func (r *sshRunner) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.client == nil {
+		return nil
+	}
+	err := r.client.Close()
+	r.client = nil
+	return err
 }
 
 func withDefaultPort(addr string) string {

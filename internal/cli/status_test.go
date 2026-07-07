@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -19,20 +20,31 @@ func (statusFakeForge) LatestRelease(_ context.Context, c forge.Component) (forg
 }
 
 func TestComponentStatusLine_Explicit(t *testing.T) {
-	line, err := componentStatusLine(context.Background(),
+	line := componentStatusLine(context.Background(),
 		config.Component{PinKey: "POSTGRES_IMAGE", Source: config.ComponentSource{Pin: "explicit"}},
 		pin.Set{"POSTGRES_IMAGE": "postgres:16.4"}, statusFakeForge{})
-	require.NoError(t, err)
 	require.Contains(t, line, "postgres:16.4")
 	require.Contains(t, line, "latest=(untracked)")
 }
 
 func TestComponentStatusLine_ForgeRelease(t *testing.T) {
-	line, err := componentStatusLine(context.Background(),
+	line := componentStatusLine(context.Background(),
 		config.Component{ID: "svc", Project: "g/svc", PinKey: "SVC_IMAGE", Source: config.ComponentSource{Forge: "release"}},
 		pin.Set{"SVC_IMAGE": "reg/svc:v1"}, statusFakeForge{})
-	require.NoError(t, err)
 	require.Contains(t, line, "latest=reg/svc:v9")
+}
+
+type statusErrForge struct{}
+
+func (statusErrForge) LatestRelease(context.Context, forge.Component) (forge.Release, error) {
+	return forge.Release{}, errors.New("forge down")
+}
+
+func TestComponentStatusLine_ForgeErrorDegrades(t *testing.T) {
+	line := componentStatusLine(context.Background(),
+		config.Component{ID: "svc", Project: "g/svc", PinKey: "SVC_IMAGE", Source: config.ComponentSource{Forge: "release"}},
+		pin.Set{"SVC_IMAGE": "reg/svc:v1"}, statusErrForge{})
+	require.Contains(t, line, "latest=(error)")
 }
 
 func TestBuildDeps_EmptyEnvForMatrix(t *testing.T) {

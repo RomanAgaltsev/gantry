@@ -12,7 +12,7 @@ func TestEmailNotify_BuildsMessage(t *testing.T) {
 	var gotAddr, gotFrom string
 	var gotTo []string
 	var gotMsg []byte
-	n := NewEmailNotifier("smtp.example.com", 587, "ops", "pw", "gantry@example.com", []string{"a@x", "b@x"})
+	n := NewEmailNotifier("smtp.example.com", 587, "ops", "pw", "gantry@example.com", []string{"a@x", "b@x"}, "")
 	n.send = func(addr string, _ smtp.Auth, from string, to []string, msg []byte) error {
 		gotAddr, gotFrom, gotTo, gotMsg = addr, from, to, msg
 		return nil
@@ -24,4 +24,20 @@ func TestEmailNotify_BuildsMessage(t *testing.T) {
 	require.Equal(t, []string{"a@x", "b@x"}, gotTo)
 	require.Contains(t, string(gotMsg), "Subject: [gantry] verify_failed prod")
 	require.Contains(t, string(gotMsg), "verify failed for prod")
+}
+
+func TestEmailNotifier_StartTLSUsesSendMailSeam(t *testing.T) {
+	var called bool
+	n := NewEmailNotifier("mail", 587, "u", "p", "from@x", []string{"to@x"}, "starttls")
+	n.send = func(string, smtp.Auth, string, []string, []byte) error { called = true; return nil }
+	require.NoError(t, n.Notify(context.Background(), Event{Kind: "deployed", Environment: "prod", Message: "ok"}))
+	require.True(t, called)
+}
+
+func TestEmailNotifier_ImplicitTLSTakesTLSPath(t *testing.T) {
+	var dialed bool
+	n := NewEmailNotifier("mail", 465, "u", "p", "from@x", []string{"to@x"}, "implicit")
+	n.implicitSend = func(addr, msg string) error { dialed = true; return nil }
+	require.NoError(t, n.Notify(context.Background(), Event{Kind: "deployed", Environment: "prod", Message: "ok"}))
+	require.True(t, dialed)
 }

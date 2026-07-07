@@ -29,11 +29,18 @@ notifications:
 
 ```yaml
   - kind: email
-    smtp: { host: smtp.example.com, port: 587, username: ops, password: ${file:/run/secrets/smtp} }
+    smtp: { host: smtp.example.com, port: 587, username: ops, password: ${file:/run/secrets/smtp}, tls: starttls }
     from: gantry@example.com
     to: [ops@example.com]
     events: [verify_failed, drift_alarm]
 ```
+
+`smtp.tls` selects the transport:
+
+| value | behavior |
+| --- | --- |
+| `starttls` (default; also when omitted) | `smtp.SendMail` with opportunistic STARTTLS. Plain-TEXT credentials are sent over STARTTLS; a server that does not negotiate TLS will fail because `PlainAuth` refuses to send credentials in the clear. |
+| `implicit` | TLS-on-connect (port 465). gantry dials TLS first, then runs the SMTP handshake and auth. Use this for servers that only expose implicit TLS on port 465. |
 
 Messages are fixed, single-line, e.g. `deployed 3 pin(s) to test`,
 `promoted test@1a2b3c4 -> prod (3 pins)`, `verify failed for prod`.

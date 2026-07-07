@@ -52,6 +52,10 @@ func parseDuration(s string) (time.Duration, error) {
 	return time.ParseDuration(s)
 }
 
+// ParseDuration parses a duration string with gantry's day-suffix extension (e.g. "1d",
+// "36h", "90s"), the same syntax accepted by the YAML Duration field.
+func ParseDuration(s string) (time.Duration, error) { return parseDuration(s) }
+
 // DriftConfig tunes the drift detector. The block is optional.
 type DriftConfig struct {
 	Threshold Duration `yaml:"threshold"`
