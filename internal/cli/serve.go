@@ -153,6 +153,7 @@ func serveDeps(cfg *config.Config, path string, res config.SecretResolver) (*dae
 	return &daemon.Deps{
 		Cfg: cfg, Forge: forgeClient, Store: store, Ledger: led,
 		Dispatch: disp, ExecFor: execFor(res, cfg),
+		ReconcileTimeout: cfg.Daemon.ReconcileTimeout.Duration(),
 	}, nil
 }
 
