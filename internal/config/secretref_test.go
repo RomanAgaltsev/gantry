@@ -30,48 +30,48 @@ func testResolver() SecretResolver {
 }
 
 func TestResolve_Env(t *testing.T) {
-	v, err := testResolver().Resolve(SecretRef{Raw: "${env:TOK}"})
+	v, err := testResolver().Resolve(context.Background(), SecretRef{Raw: "${env:TOK}"})
 	require.NoError(t, err)
 	require.Equal(t, "s3cret", v)
 }
 
 func TestResolve_File_Trimmed(t *testing.T) {
-	v, err := testResolver().Resolve(SecretRef{Raw: "${file:/run/secrets/key}"})
+	v, err := testResolver().Resolve(context.Background(), SecretRef{Raw: "${file:/run/secrets/key}"})
 	require.NoError(t, err)
 	require.Equal(t, "FILEDATA", v)
 }
 
 func TestResolve_Env_UnsetIsError(t *testing.T) {
-	_, err := testResolver().Resolve(SecretRef{Raw: "${env:MISSING}"})
+	_, err := testResolver().Resolve(context.Background(), SecretRef{Raw: "${env:MISSING}"})
 	require.ErrorContains(t, err, "not set")
 }
 
 func TestResolve_Env_ExplicitEmptyIsAllowed(t *testing.T) {
-	v, err := testResolver().Resolve(SecretRef{Raw: "${env:EMPTY}"})
+	v, err := testResolver().Resolve(context.Background(), SecretRef{Raw: "${env:EMPTY}"})
 	require.NoError(t, err)
 	require.Equal(t, "", v)
 }
 
 func TestResolve_InlineSecretRejected(t *testing.T) {
-	_, err := testResolver().Resolve(SecretRef{Raw: "literalpassword"})
+	_, err := testResolver().Resolve(context.Background(), SecretRef{Raw: "literalpassword"})
 	require.Error(t, err)
 }
 
 func TestResolve_Empty(t *testing.T) {
-	v, err := testResolver().Resolve(SecretRef{})
+	v, err := testResolver().Resolve(context.Background(), SecretRef{})
 	require.NoError(t, err)
 	require.Equal(t, "", v)
 }
 
 func TestResolve_RegistryDispatch(t *testing.T) {
-	Register("fake", func(_ SecretResolver, arg string) (string, error) { return "got:" + arg, nil })
-	got, err := DefaultResolver().Resolve(SecretRef{Raw: "${fake:xyz}"})
+	r := DefaultResolver().WithScheme("fake", func(_ context.Context, _ SecretResolver, arg string) (string, error) { return "got:" + arg, nil })
+	got, err := r.Resolve(context.Background(), SecretRef{Raw: "${fake:xyz}"})
 	require.NoError(t, err)
 	require.Equal(t, "got:xyz", got)
 }
 
 func TestResolve_UnknownSchemeStillErrors(t *testing.T) {
-	_, err := DefaultResolver().Resolve(SecretRef{Raw: "${nope:x}"})
+	_, err := DefaultResolver().Resolve(context.Background(), SecretRef{Raw: "${nope:x}"})
 	require.ErrorContains(t, err, "unknown secret scheme")
 }
 
@@ -94,7 +94,7 @@ func TestResolveCmd(t *testing.T) {
 		require.Equal(t, []string{"read", "op://vault/item/field"}, args)
 		return []byte("s3cret\n"), nil
 	}
-	got, err := r.Resolve(SecretRef{Raw: "${cmd:op read op://vault/item/field}"})
+	got, err := r.Resolve(context.Background(), SecretRef{Raw: "${cmd:op read op://vault/item/field}"})
 	require.NoError(t, err)
 	require.Equal(t, "s3cret", got) // trimmed
 }
@@ -104,7 +104,7 @@ func TestResolveCmd_ErrorPropagates(t *testing.T) {
 	r.Runner = func(context.Context, []string, string, ...string) ([]byte, error) {
 		return nil, errors.New("exit 1: denied")
 	}
-	_, err := r.Resolve(SecretRef{Raw: "${cmd:secret-tool get foo}"})
+	_, err := r.Resolve(context.Background(), SecretRef{Raw: "${cmd:secret-tool get foo}"})
 	require.ErrorContains(t, err, "denied")
 }
 
@@ -115,7 +115,7 @@ func TestResolveSOPS_DottedKey(t *testing.T) {
 		require.Equal(t, []string{"-d", "secrets.enc.yaml"}, args)
 		return []byte("db:\n  password: hunter2\n"), nil
 	}
-	got, err := r.Resolve(SecretRef{Raw: "${sops:secrets.enc.yaml#db.password}"})
+	got, err := r.Resolve(context.Background(), SecretRef{Raw: "${sops:secrets.enc.yaml#db.password}"})
 	require.NoError(t, err)
 	require.Equal(t, "hunter2", got)
 }
@@ -123,7 +123,7 @@ func TestResolveSOPS_DottedKey(t *testing.T) {
 func TestResolveSOPS_MissingKeyErrors(t *testing.T) {
 	r := DefaultResolver()
 	r.Runner = func(context.Context, []string, string, ...string) ([]byte, error) { return []byte("a: 1\n"), nil }
-	_, err := r.Resolve(SecretRef{Raw: "${sops:f#b.c}"})
+	_, err := r.Resolve(context.Background(), SecretRef{Raw: "${sops:f#b.c}"})
 	require.ErrorContains(t, err, "b.c")
 }
 
@@ -132,7 +132,7 @@ func TestResolveSOPS_NoKeyReturnsWholeOutput(t *testing.T) {
 	r.Runner = func(context.Context, []string, string, ...string) ([]byte, error) {
 		return []byte("just-the-secret\n"), nil
 	}
-	got, err := r.Resolve(SecretRef{Raw: "${sops:token.enc}"})
+	got, err := r.Resolve(context.Background(), SecretRef{Raw: "${sops:token.enc}"})
 	require.NoError(t, err)
 	require.Equal(t, "just-the-secret", got)
 }
@@ -147,7 +147,7 @@ func TestResolveVault_FieldFromJSON(t *testing.T) {
 		require.Contains(t, env, "VAULT_TOKEN=t0ken") // token threaded via env, not args
 		return []byte(`{"data":{"data":{"forge_token":"gl-xyz"}}}`), nil
 	}
-	got, err := r.Resolve(SecretRef{Raw: "${vault:secret/gantry#forge_token}"})
+	got, err := r.Resolve(context.Background(), SecretRef{Raw: "${vault:secret/gantry#forge_token}"})
 	require.NoError(t, err)
 	require.Equal(t, "gl-xyz", got)
 }
@@ -157,6 +157,32 @@ func TestResolveVault_MissingFieldErrors(t *testing.T) {
 	r.Runner = func(context.Context, []string, string, ...string) ([]byte, error) {
 		return []byte(`{"data":{"data":{"other":"x"}}}`), nil
 	}
-	_, err := r.Resolve(SecretRef{Raw: "${vault:secret/gantry#forge_token}"})
+	_, err := r.Resolve(context.Background(), SecretRef{Raw: "${vault:secret/gantry#forge_token}"})
 	require.ErrorContains(t, err, "forge_token")
+}
+
+func TestResolver_SchemesArePerInstance(t *testing.T) {
+	base := DefaultResolver()
+	custom := base.WithScheme("test", func(context.Context, SecretResolver, string) (string, error) {
+		return "custom-value", nil
+	})
+	v, err := custom.Resolve(context.Background(), SecretRef{Raw: "${test:x}"})
+	require.NoError(t, err)
+	require.Equal(t, "custom-value", v)
+
+	// The base resolver must NOT have gained the scheme (no global mutation).
+	_, err = base.Resolve(context.Background(), SecretRef{Raw: "${test:x}"})
+	require.ErrorContains(t, err, "unknown secret scheme")
+}
+
+func TestResolver_ResolveHonorsCancelledContext(t *testing.T) {
+	r := DefaultResolver()
+	r.Runner = func(ctx context.Context, _ []string, _ string, _ ...string) ([]byte, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := r.Resolve(ctx, SecretRef{Raw: "${cmd:echo hi}"})
+	require.Error(t, err)
 }
