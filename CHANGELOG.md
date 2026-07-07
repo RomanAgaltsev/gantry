@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.2](https://github.com/RomanAgaltsev/gantry/compare/v0.17.1...v0.17.2) (2026-07-07)
+
+
+### Bug Fixes
+
+* consistency cleanup ([a33980c](https://github.com/RomanAgaltsev/gantry/commit/a33980c3303d02accf205c18fabc0417291ed594))
+* **daemon:** make serve lock race-free via kernel flock (C6) ([87c1049](https://github.com/RomanAgaltsev/gantry/commit/87c1049e1bf39c8a951353010fdd371a668ef6a3))
+
 ## [0.17.1](https://github.com/RomanAgaltsev/gantry/compare/v0.17.0...v0.17.1) (2026-07-07)
 
 
