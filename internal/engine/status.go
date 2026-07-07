@@ -8,11 +8,6 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/logging"
 )
 
-// NOTE: the package var `timeNow = time.Now` is ALREADY declared in this package
-// by the (already-implemented) A3 drift detector — `internal/engine/drift.go`.
-// StatusMatrix reuses it; do NOT redeclare it here (a duplicate declaration will
-// not compile). The status_test.go override below shares that same var.
-
 // untrackedRef is the Latest value shown for explicit (registry-sourced) components,
 // which have no gantry-known "latest" release.
 const untrackedRef = "(untracked)"

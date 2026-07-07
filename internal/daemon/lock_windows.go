@@ -5,37 +5,61 @@ package daemon
 
 import (
 	"errors"
+	"os"
 	"syscall"
+	"unsafe"
 )
 
-// errInvalidParameter is ERROR_INVALID_PARAMETER (winerror 87): OpenProcess returns it for a
-// pid that maps to no process (including 0). It is the one unambiguous "clearly dead" signal
-// we act on; anything else — e.g. ERROR_ACCESS_DENIED for a live but higher-privilege
-// process — is treated as alive so a live daemon's lock is never wrongly stolen.
-const errInvalidParameter = syscall.Errno(87)
+// Windows has no POSIX flock; the equivalent is LockFileEx on a byte range of the file. Locks
+// are keyed to the open file handle and its underlying file object, so (as with flock) two
+// handles opened by separate processes — or two handles in the same process — contend for the
+// same range, which is what makes the single-winner test meaningful in-process. Closing the
+// handle releases the lock, so Release is just Close and a crashed process is reclaimed by the
+// OS without any userspace staleness heuristic.
+var (
+	kernel32       = syscall.NewLazyDLL("kernel32.dll")
+	procLockFileEx = kernel32.NewProc("LockFileEx")
+)
 
-// processQueryLimitedInfo is PROCESS_QUERY_LIMITED_INFORMATION (0x1000): a right
-// non-elevated callers can usually obtain, sufficient to test a process's existence.
-const processQueryLimitedInfo = 0x1000
+const (
+	lockfileFailImmediate = 0x00000001 // LOCKFILE_FAIL_IMMEDIATELY: fail at once rather than wait.
+	lockfileExclusiveLock = 0x00000002 // LOCKFILE_EXCLUSIVE_LOCK: writers exclude all others.
 
-// processAlive reports whether pid names a running process. It is the staleness signal for
-// the single-writer lock: a lock is reclaimed only when this reports the holder gone, so it
-// is deliberately conservative. Windows has no signal-0 probe; this leans on OpenProcess and
-// only treats ERROR_INVALID_PARAMETER (no such process) as "clearly dead" — every other
-// outcome (including access-denied for a live, elevated process) is reported as alive.
-//
-// Windows pids are uint32; a value outside that range cannot name a process, so it is
-// reported dead (the cast below is therefore overflow-safe).
-const maxUint32 = 1<<32 - 1
+	// errLockViolation is ERROR_LOCK_VIOLATION (33): LockFileEx reports it when another owner
+	// holds a conflicting range and LOCKFILE_FAIL_IMMEDIATELY was requested.
+	errLockViolation = syscall.Errno(33)
+)
 
-func processAlive(pid int) bool {
-	if pid < 0 || pid > maxUint32 {
-		return false // not a valid Windows pid — cannot name a process.
+// lockFileEx requests a Windows byte-range lock over the first byte of f. flags selects
+// exclusive-vs-shared and the fail-immediate behaviour. It returns nil on success, errLockHeld
+// on a conflicting existing lock, or the OS error otherwise.
+func lockFileEx(f *os.File, flags uint32) error {
+	var ol syscall.Overlapped // Offset/OffsetHigh zero ⇒ byte 0; no event ⇒ never waits.
+	r1, _, e1 := syscall.SyscallN(
+		procLockFileEx.Addr(),
+		f.Fd(),
+		uintptr(flags),
+		0, // reserved
+		1, // nNumberOfBytesToLockLow: lock exactly one byte at offset 0.
+		0, // nNumberOfBytesToLockHigh
+		uintptr(unsafe.Pointer(&ol)),
+	)
+	if r1 == 0 {
+		if errors.Is(e1, errLockViolation) {
+			return errLockHeld
+		}
+		return e1
 	}
-	h, err := syscall.OpenProcess(processQueryLimitedInfo, false, uint32(pid))
-	if err == nil {
-		_ = syscall.CloseHandle(h) //nolint:gosec // best-effort close; a failure cannot change the liveness answer
-		return true
-	}
-	return !errors.Is(err, errInvalidParameter)
+	return nil
+}
+
+// lockExclNB takes an exclusive, fail-fast lock on f (the single-writer lock for `serve`).
+func lockExclNB(f *os.File) error {
+	return lockFileEx(f, lockfileExclusiveLock|lockfileFailImmediate)
+}
+
+// lockSharedNB takes a shared, fail-fast lock on f for CheckFree's probe: it conflicts with an
+// exclusive holder but coexists with other shared probes.
+func lockSharedNB(f *os.File) error {
+	return lockFileEx(f, lockfileFailImmediate)
 }

@@ -32,7 +32,7 @@ daemon:
 | `reconcile_failed_repeat` | `1h` | A failing environment emits one `reconcile_failed` notification per window (so a flapping host doesn't spam); the first success after a failing streak emits a `deployed` recovery note. |
 | `doorbell` | disabled | Trigger an immediate reconcile from a forge webhook instead of waiting for the next tick. See [Doorbell](#doorbell). |
 
-Notifications are configured with the existing top-level [`notifications:`](notification.md)
+Notifications are configured with the existing top-level [`notifications:`](notifications.md)
 block — `serve` dispatches the same events the CLI does (`deployed`, `rolled_back`,
 `verify_failed`, `drift_alarm`) on every reconcile, best-effort.
 
