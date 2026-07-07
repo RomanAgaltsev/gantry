@@ -168,6 +168,10 @@ func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor
 	if len(pins) == 0 {
 		return DeployResult{}, fmt.Errorf("pin file %q is empty; nothing to deploy", env.PinFile)
 	}
+	if missing := MissingKeys(cfg, pins); len(missing) > 0 {
+		logging.From(ctx).Warn("pin file is missing declared component keys; they will deploy with no image reference",
+			"env", envName, "missing", strings.Join(missing, ","))
+	}
 	sha, err := store.LatestCommit(env.PinFile)
 	if err != nil {
 		return DeployResult{}, err
