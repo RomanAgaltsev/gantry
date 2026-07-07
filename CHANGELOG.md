@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.18.0](https://github.com/RomanAgaltsev/gantry/compare/v0.17.2...v0.18.0) (2026-07-07)
+
+
+### Features
+
+* **daemon:** HMAC-SHA256 doorbell signatures (X-Hub-Signature-256) (S1) ([d11ed3a](https://github.com/RomanAgaltsev/gantry/commit/d11ed3a42f1d362da05b0366124ab79c29dd8f27))
+
+
+### Bug Fixes
+
+* **daemon:** bind HTTP server to localhost by default (S1) ([7d27af1](https://github.com/RomanAgaltsev/gantry/commit/7d27af1df7579790ac6aec80dd4de8682152e4a8))
+* security ([7195ccd](https://github.com/RomanAgaltsev/gantry/commit/7195ccdd247fc5d22c3c76cd9bc38487fef5f2f9))
+
 ## [0.17.2](https://github.com/RomanAgaltsev/gantry/compare/v0.17.1...v0.17.2) (2026-07-07)
 
 
