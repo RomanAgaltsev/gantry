@@ -42,6 +42,7 @@ func NewRootCmd() *cobra.Command {
 		newDeployCmd(),
 		newPromoteCmd(),
 		newRollbackCmd(),
+		newPruneCmd(),
 		newHistoryCmd(),
 		newDriftCmd(),
 		newSwitchCmd(),

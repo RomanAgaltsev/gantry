@@ -199,6 +199,22 @@ func cfg() *config.Config {
 	}
 }
 
+func TestPrune_RemovesOrphanAndRedeploys(t *testing.T) {
+	// cfg() declares only SVC_IMAGE; OLD_IMAGE is an orphan in the pin file.
+	store := &fakeStore{
+		cur:     pin.Set{"SVC_IMAGE": "reg/svc:v1", "OLD_IMAGE": "reg/x:v0"},
+		headSHA: "h1",
+	}
+	ex := &fakeExec{}
+	res, err := Prune(context.Background(), cfg(), "test", ex, nil, store, &fakeLedger{}, PruneOptions{})
+	require.NoError(t, err)
+	require.Equal(t, []string{"OLD_IMAGE"}, res.Removed)
+	require.True(t, res.Deployed)
+	require.True(t, ex.called)
+	require.NotContains(t, store.committed, "OLD_IMAGE") // committed set dropped the orphan
+	require.Equal(t, "reg/svc:v1", store.committed["SVC_IMAGE"])
+}
+
 func TestSync_NoDiffIsNoOp(t *testing.T) {
 	f := fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v1"}}
 	store := &fakeStore{cur: pin.Set{"SVC_IMAGE": "reg/svc:v1"}}

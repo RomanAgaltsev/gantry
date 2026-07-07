@@ -30,6 +30,19 @@ gantry history --env test  # confirm the ok outcome
 `sync` is a no-op when nothing changed. If a previous deploy failed *after* its pin commit,
 `sync` reports `recovered` and redeploys automatically — no manual step needed.
 
+`plan` also reports **orphan pins** — keys present in the pin file but no longer declared in
+`gantry.yaml` (left behind when a component is deleted or its `pin_key` renamed). Remove them
+and drop the now-unwanted containers with:
+
+```bash
+gantry prune --env test --dry-run   # list the orphan keys it would remove
+gantry prune --env test             # remove them, commit, and redeploy the reduced set
+```
+
+`prune` reuses the normal write-commit-deploy path and refuses to prune a set down to empty
+(that would deploy with no images at all). Removing the component from `gantry.yaml` and
+running `prune` is the supported way to retire a component.
+
 ## Detect drift
 
 ```bash
