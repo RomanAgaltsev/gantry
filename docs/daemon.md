@@ -17,7 +17,7 @@ runs the daemon unchanged:
 ```yaml
 daemon:
   interval: 60s    # reconcile period; minimum 1s
-  listen:  ":9713" # HTTP bind address for /healthz
+  listen:  "127.0.0.1:9713" # HTTP bind address for /healthz (localhost by default; see Exposure & TLS)
   reconcile_timeout: 5m # per-environment reconcile deadline; minimum 1s
   reconcile_failed_repeat: 1h # suppress repeat reconcile_failed alerts per environment
   doorbell:        # optional forge-webhook trigger — see "Doorbell" below (C3c)
@@ -27,7 +27,7 @@ daemon:
 | field | default | notes |
 | --- | --- | --- |
 | `interval` | `60s` | How often each track-mode environment is reconciled. Must be ≥ `1s`. Override once with `gantry serve --interval 30s`. |
-| `listen` | `:9713` | HTTP address `/healthz` and `/metrics` are served on. |
+| `listen` | `127.0.0.1:9713` | HTTP address `/healthz`, `/metrics`, and the doorbell are served on. Defaults to localhost; set `0.0.0.0:9713` (or a specific interface) to expose it. See [Exposure & TLS](#exposure--tls). |
 | `reconcile_timeout` | `5m` | Per-environment deadline for one reconcile. A wedged remote command (e.g. a stuck `docker compose pull`) fails that env's reconcile after the timeout instead of blocking the loop; `/healthz` keeps answering `ok`. Must be ≥ `1s`. |
 | `reconcile_failed_repeat` | `1h` | A failing environment emits one `reconcile_failed` notification per window (so a flapping host doesn't spam); the first success after a failing streak emits a `deployed` recovery note. |
 | `doorbell` | disabled | Trigger an immediate reconcile from a forge webhook instead of waiting for the next tick. See [Doorbell](#doorbell). |
@@ -116,6 +116,47 @@ curl http://127.0.0.1:9713/healthz   # → ok
 HTTP server is given 5s to drain, and the lock is released. In-flight reconcile calls are
 bounded by `daemon.reconcile_timeout`; a stuck host fails that environment's reconcile after
 the timeout rather than wedging the loop, and `/healthz` keeps answering `ok` throughout.
+
+## Exposure & TLS
+
+By default the daemon binds `127.0.0.1:9713` — only the orchestrator host can reach it
+(S1). To expose it on the network (e.g. so a forge on another host can POST a webhook, or a
+remote Prometheus can scrape `/metrics`), set `listen` explicitly:
+
+```yaml
+daemon:
+  listen: "0.0.0.0:9713"   # all interfaces — only behind auth/TLS
+  # listen: "10.0.0.5:9713" # a specific interface
+```
+
+Two endpoints carry sensitive material once exposed:
+
+- **`/metrics`** reveals environment names, deploy cadence, and reconcile outcomes. Keep it on
+  localhost, or behind an authenticating reverse proxy.
+- **The doorbell** authenticates with a shared secret. In token-header mode that secret transits
+  the wire; **front the doorbell with TLS** (a reverse proxy terminating TLS to the localhost
+  daemon), or enable [HMAC body signatures](#doorbell) (`doorbell.hmac: true`) so the secret is
+  never sent.
+
+A minimal nginx reverse proxy terminating TLS in front of the localhost daemon:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name gantry.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/gantry.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/gantry.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:9713;
+        proxy_set_header Host $host;
+    }
+}
+```
+
+With this topology the daemon stays on `127.0.0.1:9713` and the forge/scraper targets
+`https://gantry.example.com` instead.
 
 ## Metrics
 

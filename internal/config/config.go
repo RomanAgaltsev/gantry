@@ -182,7 +182,7 @@ type ComponentSource struct {
 // config runs the daemon with sane values.
 type DaemonConfig struct {
 	Interval              Duration `yaml:"interval"`                // reconcile period; default 60s
-	Listen                string   `yaml:"listen"`                  // HTTP bind address; default ":9713"
+	Listen                string   `yaml:"listen"`                  // HTTP bind address; default "127.0.0.1:9713" (S1 — localhost by default)
 	ReconcileTimeout      Duration `yaml:"reconcile_timeout"`       // per-env reconcile deadline; default 5m
 	ReconcileFailedRepeat Duration `yaml:"reconcile_failed_repeat"` // suppress repeat reconcile_failed alerts; default 1h
 	Doorbell              Doorbell `yaml:"doorbell"`                // C3c; disabled by default
@@ -462,7 +462,7 @@ func (c *Config) defaultDaemon() {
 		c.Daemon.Interval = DurationOf(60 * time.Second)
 	}
 	if c.Daemon.Listen == "" {
-		c.Daemon.Listen = ":9713"
+		c.Daemon.Listen = "127.0.0.1:9713" // localhost by default; binding wide is an explicit choice (S1)
 	}
 	if c.Daemon.ReconcileTimeout.Duration() == 0 {
 		c.Daemon.ReconcileTimeout = DurationOf(5 * time.Minute)
