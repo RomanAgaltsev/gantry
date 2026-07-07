@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -72,4 +73,19 @@ func findCommand(root *cobra.Command, name string) *cobra.Command {
 		}
 	}
 	return nil
+}
+
+func TestResolveInterval(t *testing.T) {
+	def := 60 * time.Second
+
+	got, err := resolveInterval("", def)
+	require.NoError(t, err)
+	require.Equal(t, def, got) // empty flag ⇒ config default
+
+	got, err = resolveInterval("1d", def)
+	require.NoError(t, err)
+	require.Equal(t, 24*time.Hour, got) // day suffix honored (C4)
+
+	_, err = resolveInterval("30x", def)
+	require.Error(t, err) // malformed ⇒ error, not silent fallback (C4)
 }
