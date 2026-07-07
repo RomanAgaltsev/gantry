@@ -107,11 +107,23 @@ func observeDrift(ctx context.Context, d Deps) {
 		if err != nil {
 			continue // drift is a best-effort signal in the loop; a forge blip is logged elsewhere
 		}
-		for _, it := range rep.Items {
-			d.Metrics.DriftObserved(env.Name, it.Age.Seconds())
-		}
+		// Write the gauge every pass so it resets to 0 when drift resolves (C1); report the
+		// max age (the oldest drifted component), not whichever item was last in config order.
+		d.Metrics.DriftObserved(env.Name, maxDriftAge(rep))
 		if rep.Drifted() {
 			d.Dispatch.Dispatch(ctx, driftEvent(env.Name, rep)...)
 		}
 	}
+}
+
+// maxDriftAge returns the age in seconds of the oldest drifted component in rep, or 0 when
+// nothing drifted (which clears the drift gauge for the environment).
+func maxDriftAge(rep engine.DriftReport) float64 {
+	var max float64
+	for _, it := range rep.Items {
+		if s := it.Age.Seconds(); s > max {
+			max = s
+		}
+	}
+	return max
 }
