@@ -230,14 +230,31 @@ daemon:
     enabled: true
     path: /hooks/forge        # default; the URL the forge POSTs to
     secret: ${env:GANTRY_DOORBELL_TOKEN}  # required when enabled; authenticates the webhook
+    hmac: false               # set true to verify X-Hub-Signature-256 instead of a token header
 ```
 
 The webhook **carries no version data** (C3-D2) — it only says "something changed, go look".
 An authenticated ring schedules the same reconcile the interval would run; it cannot cause a
-deploy directly. gantry authenticates the request with a shared secret sent in either the
-`X-Gantry-Token` or the `X-Gitlab-Token` header (constant-time compare). Bursts are
-debounced: the doorbell is a capacity-1 channel, so a flurry of webhooks collapses to a
-single pending reconcile.
+deploy directly.
+
+### Authenticating the webhook
+
+gantry supports two authentication models, selected by `doorbell.hmac`:
+
+- **Token header** (`hmac: false`, the default) — the webhook must send the shared secret in the
+  `X-Gantry-Token` (or `X-Gitlab-Token`) header, checked with a constant-time compare. This
+  covers GitLab natively and any webhook that can set a header. The secret transits the wire,
+  so in production this endpoint should sit behind TLS or an ingress that terminates TLS for the
+  gantry port (see [Exposure & TLS](#exposure--tls)).
+- **HMAC signature** (`hmac: true`) — the webhook body is signed with HMAC-SHA256 and the secret
+  as the key; gantry verifies GitHub's `X-Hub-Signature-256: sha256=<hex>` header
+  (constant-time). The secret is **never sent on the wire** — keep it only on the forge and in
+  the gantry config. This is the recommended mode for a GitHub-backed doorbell exposed without a
+  TLS-terminating proxy, and the cleanest fit for GitHub's webhook signatures. The body read is
+  capped at 1 MiB; a missing or malformed signature is rejected with `401`.
+
+Bursts are debounced in both modes: the doorbell is a capacity-1 channel, so a flurry of
+webhooks collapses to a single pending reconcile.
 
 To wire it up in GitLab, add a webhook to the relevant project(s) pointing at gantry with the
 secret token set to the configured value:
@@ -246,18 +263,19 @@ secret token set to the configured value:
 - **Secret token:** the value `GANTRY_DOORBELL_TOKEN` resolves to
 - **Trigger:** `Release` events (a push/mirror will do)
 
-Test it by hand (expect `202 Accepted`):
+Test it by hand with a token header (expect `202 Accepted`):
 
 ```bash
-curl -XPOST -H "X-Gantry-Token: $GANTRY_DOORBELL_TOKEN" http://host:9713/hooks/forge
+curl -XPOST -H "X-Gantry-Token: $GANTRY_DOORBELL_TOKEN" http://127.0.0.1:9713/hooks/forge
 ```
 
 The endpoint authenticates by shared secret, so in production it should sit behind TLS or an
 ingress that terminates TLS for the gantry port.
 
+For GitHub with `hmac: true`, gantry verifies the body signature GitHub sends automatically —
+no extra header is needed beyond the webhook secret you configure on the GitHub side.
+
 ## What is *not* here yet
 
-The C3 daemon slices (core loop, metrics, doorbell) are complete. GitHub HMAC signing
-(`X-Hub-Signature-256`) is a documented seam in the doorbell's authenticator rather than
-built today — the shared-secret header covers GitLab natively and any webhook that can set a
-header; add HMAC when a GitHub adopter needs it.
+The C3 daemon slices (core loop, metrics, doorbell) are complete, including GitHub HMAC
+signing (`X-Hub-Signature-256`, behind `doorbell.hmac`).

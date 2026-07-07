@@ -192,7 +192,8 @@ type DaemonConfig struct {
 type Doorbell struct {
 	Enabled bool      `yaml:"enabled"`
 	Path    string    `yaml:"path"`   // default "/hooks/forge"
-	Secret  SecretRef `yaml:"secret"` // required when Enabled; authenticates the webhook
+	HMAC    bool      `yaml:"hmac"`   // verify X-Hub-Signature-256 body HMAC instead of a token header
+	Secret  SecretRef `yaml:"secret"` // required when Enabled; token or HMAC key
 }
 
 // SecretsConfig holds backend-wide secret settings (currently just Vault). Optional.

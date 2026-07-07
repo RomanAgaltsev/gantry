@@ -55,7 +55,7 @@ func TestBuildServeMux_ServesMetricsAndHealthz(t *testing.T) {
 }
 
 func TestBuildServeMux_MountsDoorbellWhenProvided(t *testing.T) {
-	h, _ := daemon.NewDoorbell("s3cret")
+	h, _ := daemon.NewDoorbell("s3cret", false)
 	mux := buildServeMux(nil, doorbellMount{Path: "/hooks/forge", Handler: h})
 
 	rec := httptest.NewRecorder()

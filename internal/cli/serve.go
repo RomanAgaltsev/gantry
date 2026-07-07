@@ -115,7 +115,7 @@ func runServe(cmd *cobra.Command, interval string) error {
 		if err != nil {
 			return err
 		}
-		handler, ch := daemon.NewDoorbell(secret)
+		handler, ch := daemon.NewDoorbell(secret, cfg.Daemon.Doorbell.HMAC)
 		bell, bellMount = ch, doorbellMount{Path: cfg.Daemon.Doorbell.Path, Handler: handler}
 		logging.From(cmd.Context()).Info("doorbell enabled", "path", cfg.Daemon.Doorbell.Path)
 	}
