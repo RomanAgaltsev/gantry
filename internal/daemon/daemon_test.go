@@ -2,14 +2,17 @@ package daemon
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/RomanAgaltsev/gantry/internal/config"
+	"github.com/RomanAgaltsev/gantry/internal/engine"
 	"github.com/RomanAgaltsev/gantry/internal/executor"
 	"github.com/RomanAgaltsev/gantry/internal/forge"
+	"github.com/RomanAgaltsev/gantry/internal/pin"
 	"github.com/RomanAgaltsev/gantry/internal/verify"
 )
 
@@ -45,4 +48,49 @@ func TestRun_SurvivesReconcileError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
 	defer cancel()
 	require.NoError(t, Run(ctx, d, Options{Interval: 5 * time.Millisecond})) // returns only on ctx deadline
+}
+
+// recObserver records every ReconcileDone/DriftObserved call for assertions.
+type recObserver struct {
+	mu    sync.Mutex
+	drift []driftCall
+}
+
+type driftCall struct {
+	env string
+	age float64
+}
+
+func (o *recObserver) ReconcileDone(string, engine.SyncResult, error, time.Duration) {}
+func (o *recObserver) DriftObserved(env string, ageSeconds float64) {
+	o.mu.Lock()
+	o.drift = append(o.drift, driftCall{env, ageSeconds})
+	o.mu.Unlock()
+}
+
+func TestObserveDrift_ReportsMaxAndClearsWhenResolved(t *testing.T) {
+	// BuiltAt must be older than the 7-day default drift threshold to register as drift.
+	old := forge.Release{ImageRepository: "reg/svc", ImageTag: "v2", BuiltAt: time.Now().Add(-10 * 24 * time.Hour)}
+	obs := &recObserver{}
+	store := newFakeStore() // Read returns empty pins ⇒ latest ref differs ⇒ drift
+	d := Deps{
+		Cfg:     oneTrackEnv(t),
+		Forge:   fakeForge{rel: old},
+		Store:   store,
+		Ledger:  newFakeLedger(),
+		Metrics: obs,
+	}
+	// Pass 1: component is behind by 10d ⇒ one DriftObserved(env,>0).
+	observeDrift(context.Background(), d)
+
+	// Pass 2: pin is now at latest ⇒ nothing drifts ⇒ DriftObserved(env,0) must still fire.
+	store.cur = pin.Set{"SVC_IMAGE": old.ImageRef()}
+	observeDrift(context.Background(), d)
+
+	obs.mu.Lock()
+	defer obs.mu.Unlock()
+	require.Len(t, obs.drift, 2, "gauge must be written every pass, even with no drift")
+	require.Greater(t, obs.drift[0].age, 0.0)
+	require.Equal(t, "test", obs.drift[0].env)
+	require.Equal(t, 0.0, obs.drift[1].age, "gauge must reset to 0 when drift resolves")
 }
