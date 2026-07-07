@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 
@@ -55,11 +56,11 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 		env = *e
 	}
 	res := config.DefaultResolver()
-	resolveVaultDefaults(&res, cfg)
+	resolveVaultDefaults(cmd.Context(), &res, cfg)
 
 	var f forge.Forge
 	if needForge {
-		token, err := res.Resolve(cfg.Forge.Token)
+		token, err := res.Resolve(cmd.Context(), cfg.Forge.Token)
 		if err != nil {
 			return nil, err
 		}
@@ -69,7 +70,7 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 		}
 	}
 
-	ex, vf, err := buildExecAndVerify(res, cfg, &env, needExec)
+	ex, vf, err := buildExecAndVerify(cmd.Context(), res, cfg, &env, needExec)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +86,7 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 	if err != nil {
 		return nil, err
 	}
-	notifier, err := buildNotifier(res, cfg.Notifications)
+	notifier, err := buildNotifier(cmd.Context(), res, cfg.Notifications)
 	if err != nil {
 		return nil, err
 	}
@@ -96,11 +97,11 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 // resolveVaultDefaults resolves the ambient secrets.vault address/token onto res so any
 // ${vault:…} ref can use them. Resolution is best-effort: if a vault ref is never used the
 // ambient vars need not be set; a ${vault:…} ref whose token is unset errors clearly at use.
-func resolveVaultDefaults(res *config.SecretResolver, cfg *config.Config) {
-	if addr, err := res.Resolve(cfg.Secrets.Vault.Address); err == nil {
+func resolveVaultDefaults(ctx context.Context, res *config.SecretResolver, cfg *config.Config) {
+	if addr, err := res.Resolve(ctx, cfg.Secrets.Vault.Address); err == nil {
 		res.Vault.Address = addr
 	}
-	if tok, err := res.Resolve(cfg.Secrets.Vault.Token); err == nil {
+	if tok, err := res.Resolve(ctx, cfg.Secrets.Vault.Token); err == nil {
 		res.Vault.Token = tok
 	}
 }
@@ -108,20 +109,20 @@ func resolveVaultDefaults(res *config.SecretResolver, cfg *config.Config) {
 // buildExecAndVerify builds the SSH executor and verifiers for env when needExec is set and
 // the connection has an ssh block; otherwise it returns nils (read-only or forge-free
 // commands skip the SSH secrets they do not use).
-func buildExecAndVerify(res config.SecretResolver, cfg *config.Config, env *config.Environment, needExec bool) (executor.Executor, verify.Verifier, error) {
+func buildExecAndVerify(ctx context.Context, res config.SecretResolver, cfg *config.Config, env *config.Environment, needExec bool) (executor.Executor, verify.Verifier, error) {
 	conn := cfg.Connections[env.Executor.Connection]
 	if !needExec || conn.SSH == nil {
 		return nil, nil, nil
 	}
-	logins, err := resolveLogins(res, cfg.Registries)
+	logins, err := resolveLogins(ctx, res, cfg.Registries)
 	if err != nil {
 		return nil, nil, err
 	}
-	key, err := res.Resolve(conn.SSH.Key)
+	key, err := res.Resolve(ctx, conn.SSH.Key)
 	if err != nil {
 		return nil, nil, err
 	}
-	known, err := res.Resolve(conn.SSH.KnownHosts)
+	known, err := res.Resolve(ctx, conn.SSH.KnownHosts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -137,22 +138,23 @@ func buildExecAndVerify(res config.SecretResolver, cfg *config.Config, env *conf
 }
 
 // execFor returns a factory that builds the executor + verifier for one environment,
-// resolving secrets with res. Shared by the CLI verbs (via buildDeps) and the daemon.
-func execFor(res config.SecretResolver, cfg *config.Config) func(config.Environment) (executor.Executor, verify.Verifier, error) {
-	return func(env config.Environment) (executor.Executor, verify.Verifier, error) {
-		return buildExecAndVerify(res, cfg, &env, true)
+// resolving secrets with res under the caller's ctx. Shared by the CLI verbs (via buildDeps)
+// and the daemon.
+func execFor(res config.SecretResolver, cfg *config.Config) func(ctx context.Context, env config.Environment) (executor.Executor, verify.Verifier, error) {
+	return func(ctx context.Context, env config.Environment) (executor.Executor, verify.Verifier, error) {
+		return buildExecAndVerify(ctx, res, cfg, &env, true)
 	}
 }
 
 // resolveLogins resolves each registry's credentials for the executor to log in with.
-func resolveLogins(res config.SecretResolver, registries map[string]config.Registry) ([]composessh.RegistryLogin, error) {
+func resolveLogins(ctx context.Context, res config.SecretResolver, registries map[string]config.Registry) ([]composessh.RegistryLogin, error) {
 	var logins []composessh.RegistryLogin
 	for host, reg := range registries {
-		u, err := res.Resolve(reg.User)
+		u, err := res.Resolve(ctx, reg.User)
 		if err != nil {
 			return nil, err
 		}
-		pw, err := res.Resolve(reg.Password)
+		pw, err := res.Resolve(ctx, reg.Password)
 		if err != nil {
 			return nil, err
 		}

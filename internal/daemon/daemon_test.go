@@ -19,8 +19,10 @@ import (
 func TestRun_ReconcilesTrackEnvsAndStopsOnCancel(t *testing.T) {
 	spy := &spyExec{}
 	d := Deps{
-		Engine:  engine.New(twoEnvConfig(t), fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v1"}}, newFakeStore(), newFakeLedger()),
-		ExecFor: func(config.Environment) (executor.Executor, verify.Verifier, error) { return spy, nil, nil },
+		Engine: engine.New(twoEnvConfig(t), fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v1"}}, newFakeStore(), newFakeLedger()),
+		ExecFor: func(context.Context, config.Environment) (executor.Executor, verify.Verifier, error) {
+			return spy, nil, nil
+		},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -40,8 +42,10 @@ func TestRun_ReconcilesTrackEnvsAndStopsOnCancel(t *testing.T) {
 func TestRun_SurvivesReconcileError(t *testing.T) {
 	// A forge that always errors must not stop the loop: it keeps ticking until cancel.
 	d := Deps{
-		Engine:  engine.New(oneTrackEnv(t), errForge{}, newFakeStore(), newFakeLedger()),
-		ExecFor: func(config.Environment) (executor.Executor, verify.Verifier, error) { return &spyExec{}, nil, nil },
+		Engine: engine.New(oneTrackEnv(t), errForge{}, newFakeStore(), newFakeLedger()),
+		ExecFor: func(context.Context, config.Environment) (executor.Executor, verify.Verifier, error) {
+			return &spyExec{}, nil, nil
+		},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
 	defer cancel()
@@ -100,8 +104,10 @@ func (blockingExec) Deploy(ctx context.Context, _ executor.Plan) (executor.Resul
 
 func TestReconcileEnv_PerCycleTimeoutUnblocksWedgedDeploy(t *testing.T) {
 	d := Deps{
-		Engine:           engine.New(oneTrackEnv(t), fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v1"}}, newFakeStore(), newFakeLedger()),
-		ExecFor:          func(config.Environment) (executor.Executor, verify.Verifier, error) { return blockingExec{}, nil, nil },
+		Engine: engine.New(oneTrackEnv(t), fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v1"}}, newFakeStore(), newFakeLedger()),
+		ExecFor: func(context.Context, config.Environment) (executor.Executor, verify.Verifier, error) {
+			return blockingExec{}, nil, nil
+		},
 		ReconcileTimeout: 20 * time.Millisecond,
 	} // Dispatch left nil: Dispatcher.Dispatch on a nil slice is a no-op
 	d.Metrics = nopObserver{} // reconcileEnv is driven directly, not via Run which sets the nop default

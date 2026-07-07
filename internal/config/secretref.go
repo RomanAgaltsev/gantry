@@ -32,6 +32,10 @@ type SecretResolver struct {
 	Runner func(ctx context.Context, env []string, name string, args ...string) ([]byte, error)
 	// Vault holds the resolved ambient Vault address/token used by ${vault:…} (Task 5).
 	Vault VaultDefaults
+
+	// schemes holds per-resolver scheme overrides; nil means only the built-ins apply. Populated
+	// via WithScheme so there is no shared mutable state (review §2.2-D).
+	schemes map[string]SchemeFunc
 }
 
 // VaultDefaults are the resolved ambient Vault address and token used by ${vault:…}. Both
@@ -65,30 +69,32 @@ func execRunner(ctx context.Context, env []string, name string, args ...string) 
 // gantry command or a daemon reconcile.
 const runnerTimeout = 30 * time.Second
 
-// run runs name with args under a bounded context with no extra env (used by cmd/sops).
-func (r SecretResolver) run(name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), runnerTimeout)
+// run runs name with args under a bounded context derived from ctx with no extra env
+// (used by cmd/sops). The caller's ctx bounds it on top of runnerTimeout (whichever fires
+// first), so a daemon shutting down cancels an in-flight command.
+func (r SecretResolver) run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	cctx, cancel := context.WithTimeout(ctx, runnerTimeout)
 	defer cancel()
-	return r.Runner(ctx, nil, name, args...)
+	return r.Runner(cctx, nil, name, args...)
 }
 
-// runWithEnv runs name with args under a bounded context with env appended to the child env
-// (used by vault to pass VAULT_TOKEN off the process arg list).
-func (r SecretResolver) runWithEnv(env []string, name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), runnerTimeout)
+// runWithEnv runs name with args under a bounded context derived from ctx with env appended to
+// the child env (used by vault to pass VAULT_TOKEN off the process arg list).
+func (r SecretResolver) runWithEnv(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
+	cctx, cancel := context.WithTimeout(ctx, runnerTimeout)
 	defer cancel()
-	return r.Runner(ctx, env, name, args...)
+	return r.Runner(cctx, env, name, args...)
 }
 
 // resolveCmd runs a command and returns its trimmed stdout as the secret. The arg is split
 // on whitespace: "${cmd:prog a b}" runs prog with args [a b]. Commands needing shell quoting
 // should be wrapped in a script.
-func resolveCmd(r SecretResolver, arg string) (string, error) {
+func resolveCmd(ctx context.Context, r SecretResolver, arg string) (string, error) {
 	fields := strings.Fields(arg)
 	if len(fields) == 0 {
 		return "", errors.New("cmd secret: empty command")
 	}
-	out, err := r.run(fields[0], fields[1:]...)
+	out, err := r.run(ctx, fields[0], fields[1:]...)
 	if err != nil {
 		return "", fmt.Errorf("cmd secret %q: %w", fields[0], err)
 	}
@@ -97,9 +103,9 @@ func resolveCmd(r SecretResolver, arg string) (string, error) {
 
 // resolveSOPS decrypts a SOPS file via the sops binary and extracts a dotted key. Arg form:
 // "path#dotted.key"; with no "#key" the whole trimmed decrypted output is the secret.
-func resolveSOPS(r SecretResolver, arg string) (string, error) {
+func resolveSOPS(ctx context.Context, r SecretResolver, arg string) (string, error) {
 	file, key, hasKey := strings.Cut(arg, "#")
-	out, err := r.run("sops", "-d", file)
+	out, err := r.run(ctx, "sops", "-d", file)
 	if err != nil {
 		return "", fmt.Errorf("sops decrypt %q: %w", file, err)
 	}
@@ -136,7 +142,7 @@ func walkDotted(doc map[string]any, path string) (string, error) {
 // resolveVault reads a field from a Vault KV secret via the vault binary. Arg form:
 // "mount/path#field". Address/token come from the resolver's VaultDefaults; the token is
 // passed via the child env (VAULT_TOKEN) so it stays off the process arg list.
-func resolveVault(r SecretResolver, arg string) (string, error) {
+func resolveVault(ctx context.Context, r SecretResolver, arg string) (string, error) {
 	path, field, ok := strings.Cut(arg, "#")
 	if !ok {
 		return "", fmt.Errorf("vault secret %q: want mount/path#field", arg)
@@ -151,7 +157,7 @@ func resolveVault(r SecretResolver, arg string) (string, error) {
 	if r.Vault.Token != "" {
 		env = append(env, "VAULT_TOKEN="+r.Vault.Token)
 	}
-	out, err := r.runWithEnv(env, "vault", args...)
+	out, err := r.runWithEnv(ctx, env, "vault", args...)
 	if err != nil {
 		return "", fmt.Errorf("vault kv get %q: %w", path, err)
 	}
@@ -170,13 +176,15 @@ func resolveVault(r SecretResolver, arg string) (string, error) {
 	return v, nil
 }
 
-// SchemeFunc resolves the arg of a ${scheme:arg} ref. res is passed so a backend can compose
+// SchemeFunc resolves the arg of a ${scheme:arg} ref. ctx is the caller's context (a
+// shelling-out scheme must honor its cancellation); res is passed so a backend can compose
 // other schemes (e.g. vault resolving its own token) and so tests can inject fakes.
-type SchemeFunc func(res SecretResolver, arg string) (string, error)
+type SchemeFunc func(ctx context.Context, res SecretResolver, arg string) (string, error)
 
-// schemes maps a scheme name to its resolver. env/file are built in; cmd/sops/vault register
-// themselves in their own tasks. Register adds or overrides an entry (tests, future backends).
-var schemes = map[string]SchemeFunc{
+// builtinSchemes are the always-available schemes. It is written once at init and never
+// mutated (no Register), so there is no shared mutable state; per-resolver additions go
+// through WithScheme instead (review §2.2-D).
+var builtinSchemes = map[string]SchemeFunc{
 	"env":   resolveEnv,
 	"file":  resolveFile,
 	"cmd":   resolveCmd,
@@ -184,12 +192,31 @@ var schemes = map[string]SchemeFunc{
 	"vault": resolveVault,
 }
 
-// Register adds or overrides a secret scheme. Intended for tests and future backends
-// (e.g. a ${vaultlite:…} follow-up).
-func Register(scheme string, fn SchemeFunc) { schemes[scheme] = fn }
+// WithScheme returns a copy of the resolver with an added/overridden scheme (used by tests
+// and future backends such as a ${vaultlite:…} follow-up) — no package-global mutation.
+func (r SecretResolver) WithScheme(name string, fn SchemeFunc) SecretResolver {
+	cp := make(map[string]SchemeFunc, len(r.schemes)+1)
+	for k, v := range r.schemes {
+		cp[k] = v
+	}
+	cp[name] = fn
+	r.schemes = cp
+	return r
+}
+
+// schemeFor resolves a scheme name against the per-resolver overrides, then the built-ins.
+func (r SecretResolver) schemeFor(name string) (SchemeFunc, bool) {
+	if fn, ok := r.schemes[name]; ok {
+		return fn, true
+	}
+	fn, ok := builtinSchemes[name]
+	return fn, ok
+}
 
 // Resolve returns the secret value for a ref. Empty ref → "". Inline (non-${...}) → error.
-func (r SecretResolver) Resolve(s SecretRef) (string, error) {
+// ctx bounds any shelling-out scheme (cmd/sops/vault) on top of the per-scheme timeout, so a
+// daemon shutting down cancels an in-flight `vault kv get`.
+func (r SecretResolver) Resolve(ctx context.Context, s SecretRef) (string, error) {
 	raw := strings.TrimSpace(s.Raw)
 	if raw == "" {
 		return "", nil
@@ -202,18 +229,18 @@ func (r SecretResolver) Resolve(s SecretRef) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("malformed secret ref %q", raw)
 	}
-	fn, ok := schemes[scheme]
+	fn, ok := r.schemeFor(scheme)
 	if !ok {
 		return "", fmt.Errorf("unknown secret scheme %q", scheme)
 	}
-	return fn(r, arg)
+	return fn(ctx, r, arg)
 }
 
 // resolveEnv reads an environment variable. A referenced-but-unset variable is a
 // configuration error, not an empty secret: silently resolving to "" turns a typo'd
 // ${env:NAME} into an unauthenticated request or an empty docker-login password that fails
 // far from the cause. An explicitly set-but-empty variable still resolves to "".
-func resolveEnv(r SecretResolver, arg string) (string, error) {
+func resolveEnv(_ context.Context, r SecretResolver, arg string) (string, error) {
 	v, ok := r.LookupEnv(arg)
 	if !ok {
 		return "", fmt.Errorf("secret env var %q is referenced but not set", arg)
@@ -222,7 +249,7 @@ func resolveEnv(r SecretResolver, arg string) (string, error) {
 }
 
 // resolveFile reads a file and returns its trimmed contents.
-func resolveFile(r SecretResolver, arg string) (string, error) {
+func resolveFile(_ context.Context, r SecretResolver, arg string) (string, error) {
 	b, err := r.ReadFile(arg)
 	if err != nil {
 		return "", fmt.Errorf("read secret file %q: %w", arg, err)

@@ -28,7 +28,7 @@ func (nopObserver) DriftObserved(string, float64)                               
 type Deps struct {
 	Engine                *engine.Engine
 	Dispatch              notify.Dispatcher
-	ExecFor               func(env config.Environment) (executor.Executor, verify.Verifier, error)
+	ExecFor               func(ctx context.Context, env config.Environment) (executor.Executor, verify.Verifier, error)
 	Metrics               Observer           // nil ⇒ nopObserver
 	ReconcileTimeout      time.Duration      // per-env reconcile deadline; 0 ⇒ no deadline
 	Suppressor            *failureSuppressor // nil ⇒ default built in Run from ReconcileFailedRepeat
@@ -107,7 +107,7 @@ func reconcileAll(ctx context.Context, d Deps) {
 
 func reconcileEnv(ctx context.Context, d Deps, env config.Environment) bool {
 	log := logging.From(ctx)
-	ex, vf, err := d.ExecFor(env)
+	ex, vf, err := d.ExecFor(ctx, env)
 	if err != nil {
 		log.Warn("skipping environment; executor build failed", "env", env.Name, "error", err)
 		return false
