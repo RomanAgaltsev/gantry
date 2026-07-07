@@ -12,9 +12,11 @@ func newDeployCmd() *cobra.Command {
 		Use:   "deploy",
 		Short: "Reconcile an environment to its current committed pin file",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := guardServe(cmd); err != nil {
+			release, err := acquireServeLock(cmd)
+			if err != nil {
 				return err
 			}
+			defer release()
 			d, err := buildDeps(cmd, envName, false, true)
 			if err != nil {
 				return err

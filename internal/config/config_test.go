@@ -544,6 +544,17 @@ func TestLoad_DaemonIntervalTooSmall(t *testing.T) {
 	require.ErrorContains(t, err, "daemon.interval")
 }
 
+func TestLoad_DefaultsReconcileTimeout(t *testing.T) {
+	cfg, err := Load(writeCfg(t, goodCfg)) // no daemon: block ⇒ all fields default
+	require.NoError(t, err)
+	require.Equal(t, 5*time.Minute, cfg.Daemon.ReconcileTimeout.Duration())
+}
+
+func TestLoad_ReconcileTimeoutTooSmall(t *testing.T) {
+	_, err := loadYAMLErr(t, withDaemon(`reconcile_timeout: 500ms`))
+	require.ErrorContains(t, err, "daemon.reconcile_timeout")
+}
+
 func TestLoad_DoorbellEnabledRequiresSecret(t *testing.T) {
 	_, err := loadYAMLErr(t, withDaemon("doorbell:\n    enabled: true"))
 	require.ErrorContains(t, err, "doorbell")

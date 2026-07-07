@@ -34,3 +34,10 @@ type SlotExecutor interface {
 	LiveSlot(ctx context.Context) (string, error)    // slot the pointer routes to; "" if unset
 	SwitchTo(ctx context.Context, slot string) error // flip the pointer to slot and reload
 }
+
+// RunnerCloser is an executor whose underlying transport can be released between uses. The
+// daemon type-asserts to it and calls CloseRunner after each environment's reconcile so a
+// long-running process does not leak a pooled SSH connection per cycle (C3).
+type RunnerCloser interface {
+	CloseRunner() error
+}
