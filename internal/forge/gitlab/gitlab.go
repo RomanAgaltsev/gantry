@@ -43,10 +43,15 @@ type apiRelease struct {
 	Description string `json:"description"`
 }
 
-// LatestRelease returns the most recent release of the component.
+// releasePage bounds how many recent releases we scan for the newest stable one; enough to
+// step over a run of prereleases without an unbounded fetch.
+const releasePage = 20
+
+// LatestRelease returns the most recent non-prerelease release of the component, aligning
+// GitLab (which would otherwise return an RC) with GitHub's /releases/latest (D5).
 func (c *Client) LatestRelease(ctx context.Context, comp forge.Component) (forge.Release, error) {
-	endpoint := fmt.Sprintf("%s/api/v4/projects/%s/releases?per_page=1",
-		c.baseURL, url.PathEscape(comp.Project))
+	endpoint := fmt.Sprintf("%s/api/v4/projects/%s/releases?per_page=%d",
+		c.baseURL, url.PathEscape(comp.Project), releasePage)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return forge.Release{}, err
@@ -69,9 +74,22 @@ func (c *Client) LatestRelease(ctx context.Context, comp forge.Component) (forge
 	if len(rels) == 0 {
 		return forge.Release{}, fmt.Errorf("component %q has no releases", comp.Project)
 	}
-	rel, err := forge.ParseMetadata(rels[0].Description, c.marker)
-	if err != nil {
-		return forge.Release{}, fmt.Errorf("component %q release %q: %w", comp.Project, rels[0].TagName, err)
+	var firstErr error
+	for _, ar := range rels {
+		rel, err := forge.ParseMetadata(ar.Description, c.marker)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("component %q release %q: %w", comp.Project, ar.TagName, err)
+			}
+			continue // a release without a valid metadata block is not a gantry release; skip it
+		}
+		if forge.IsPrerelease(rel.SemverVersion) {
+			continue // RC/beta: excluded, matching GitHub's /releases/latest (D5)
+		}
+		return rel, nil
 	}
-	return rel, nil
+	if firstErr != nil {
+		return forge.Release{}, firstErr
+	}
+	return forge.Release{}, fmt.Errorf("component %q has no non-prerelease release in the latest %d", comp.Project, releasePage)
 }

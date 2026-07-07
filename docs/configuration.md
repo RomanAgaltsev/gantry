@@ -69,6 +69,15 @@ embed a metadata block delimited by the configured marker:
 release with a missing or invalid metadata block is a **hard error** — gantry never
 silently skips a release.
 
+Both GitHub and GitLab resolve "latest" to the newest **non-prerelease** release. gantry
+identifies a prerelease from the release metadata's `semver_version`: any value with a
+SemVer prerelease segment (a `-` before any `+` build metadata, e.g. `v1.3.0-rc1`,
+`2.0.0-beta.1`) is treated as a prerelease and skipped when scanning for the latest
+release. This keeps GitHub (`/releases/latest`, which already excludes prereleases) and
+GitLab (whose Releases API lists prereleases by date) aligned, so a team tagging an RC does
+not get it auto-deployed on one forge but not the other. An empty `semver_version` is
+treated as a stable release so gantry never skips a release that simply lacks the field.
+
 When `image_digest` is present, gantry pins the **digest** alongside the tag —
 `repository:tag@sha256:…` — so a later re-push of the same tag cannot change the
 image a host pulls. Without a digest it falls back to a tag-only `repository:tag`
