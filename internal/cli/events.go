@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/RomanAgaltsev/gantry/internal/engine"
+	"github.com/RomanAgaltsev/gantry/internal/humanize"
 	"github.com/RomanAgaltsev/gantry/internal/notify"
 )
 
@@ -84,7 +85,7 @@ func driftEvents(rep engine.DriftReport) []notify.Event {
 		evs = append(evs, notify.Event{
 			Kind: "drift_alarm", Environment: it.Env, Time: time.Now(),
 			Message: fmt.Sprintf("drift: %s in %s is %s behind latest (%s)",
-				it.Component, it.Env, humanizeDuration(it.Age), it.Latest.SemverVersion),
+				it.Component, it.Env, humanize.Duration(it.Age), it.Latest.SemverVersion),
 		})
 	}
 	return evs
