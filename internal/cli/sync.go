@@ -34,6 +34,10 @@ type deps struct {
 // (an actual deploy). Read-only or forge-free commands (history, promote, rollback) skip
 // the secrets they do not use, so e.g. `gantry history` never resolves a forge token or
 // registry credential.
+// newForgeFunc builds the forge client; overridable in tests to inject a fake forge without
+// standing up an HTTP forge server.
+var newForgeFunc = newForge
+
 func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*deps, error) {
 	path, err := cmd.Flags().GetString("config")
 	if err != nil {
@@ -61,7 +65,7 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 		if err != nil {
 			return nil, err
 		}
-		f, err = newForge(cfg.Forge, token)
+		f, err = newForgeFunc(cfg.Forge, token)
 		if err != nil {
 			return nil, err
 		}
