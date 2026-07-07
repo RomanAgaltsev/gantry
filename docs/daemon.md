@@ -19,6 +19,7 @@ daemon:
   interval: 60s    # reconcile period; minimum 1s
   listen:  ":9713" # HTTP bind address for /healthz
   reconcile_timeout: 5m # per-environment reconcile deadline; minimum 1s
+  reconcile_failed_repeat: 1h # suppress repeat reconcile_failed alerts per environment
   doorbell:        # optional forge-webhook trigger — see "Doorbell" below (C3c)
     enabled: false
 ```
@@ -28,6 +29,7 @@ daemon:
 | `interval` | `60s` | How often each track-mode environment is reconciled. Must be ≥ `1s`. Override once with `gantry serve --interval 30s`. |
 | `listen` | `:9713` | HTTP address `/healthz` and `/metrics` are served on. |
 | `reconcile_timeout` | `5m` | Per-environment deadline for one reconcile. A wedged remote command (e.g. a stuck `docker compose pull`) fails that env's reconcile after the timeout instead of blocking the loop; `/healthz` keeps answering `ok`. Must be ≥ `1s`. |
+| `reconcile_failed_repeat` | `1h` | A failing environment emits one `reconcile_failed` notification per window (so a flapping host doesn't spam); the first success after a failing streak emits a `deployed` recovery note. |
 | `doorbell` | disabled | Trigger an immediate reconcile from a forge webhook instead of waiting for the next tick. See [Doorbell](#doorbell). |
 
 Notifications are configured with the existing top-level [`notifications:`](notification.md)

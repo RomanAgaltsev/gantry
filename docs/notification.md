@@ -5,7 +5,12 @@ send is logged and never fails a deploy, promote, rollback, or drift check.
 
 ## Events
 
-`deployed` · `promoted` · `rolled_back` · `verify_failed` · `drift_alarm`
+`deployed` · `promoted` · `rolled_back` · `verify_failed` · `drift_alarm` · `reconcile_failed`
+
+`reconcile_failed` is emitted by the daemon when an environment's reconcile fails for a
+non-verify reason (e.g. SSH refused, `compose pull` failed). To keep a flapping host from
+spamming, repeats within `daemon.reconcile_failed_repeat` (default `1h`) are suppressed, and
+the first successful reconcile after a failing streak emits a `deployed` recovery note.
 
 Each channel may subscribe to a subset with `events:`; omit it to receive all kinds.
 
