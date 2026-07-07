@@ -25,11 +25,14 @@ const (
 )
 
 // Executor deploys each pin set into releases/<commit> and atomically flips `current` to it.
+// Keep, when >0, bounds retained release dirs: after a successful deploy the oldest dirs beyond
+// the newest Keep are removed (never the active one). Keep==0 retains all (today's behavior).
 type Executor struct {
 	Runner       composessh.Runner
 	ProjectDir   string
 	ComposeFiles []string
 	Logins       []composessh.RegistryLogin
+	Keep         int
 }
 
 // Deploy lays down the release directory, flips the current symlink atomically, then runs
@@ -70,7 +73,30 @@ func (e *Executor) Deploy(ctx context.Context, p executor.Plan) (executor.Result
 	}, p.Pins); err != nil {
 		return executor.Result{}, err
 	}
+	// Pruning is best-effort housekeeping; a failure must not fail an otherwise-good deploy.
+	// The command's own stderr is captured by the runner error if it ever surfaces.
+	_ = e.prune(ctx) //nolint:gosec // best-effort prune; never fails a good deploy
 	return executor.Result{Changed: true, Detail: "symlink-release " + p.Commit}, nil
+}
+
+// prune removes release directories beyond the newest Keep, never the one `current` points
+// at. A no-op when Keep<=0. One shell command over the runner keeps it a single round-trip.
+// cur and d are shell-internal values derived from ls/readlink on the host, never
+// gantry-interpolated config data, so this stays within the ShellQuote discipline.
+func (e *Executor) prune(ctx context.Context) error {
+	if e.Keep <= 0 {
+		return nil
+	}
+	relDir := composessh.ShellQuote(path.Join(e.ProjectDir, releasesDir))
+	curLink := composessh.ShellQuote(path.Join(e.ProjectDir, currentLink))
+	// List release dirs by mtime (newest first), drop the active target, keep the newest Keep,
+	// rm -rf the remainder. `readlink -f` resolves `current` to its release dir basename.
+	cmd := fmt.Sprintf(
+		`cur=$(basename "$(readlink -f %s)"); `+
+			`ls -1t %s | grep -v -x "$cur" | tail -n +%d | while read d; do rm -rf %s/"$d"; done`,
+		curLink, relDir, e.Keep+1, relDir)
+	_, err := e.Runner.Run(ctx, cmd, nil)
+	return err
 }
 
 // ComposeTarget verifies the active release, which runs compose from current/.env.

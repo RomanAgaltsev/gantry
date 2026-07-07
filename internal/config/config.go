@@ -145,6 +145,7 @@ type ExecutorConfig struct {
 	ProjectDir   string                `yaml:"project_dir"`
 	ComposeFiles []string              `yaml:"compose_files"`
 	EnvFile      string                `yaml:"env_file"`
+	Keep         int                   `yaml:"keep"`    // symlink-release: retain the newest N release dirs (0 ⇒ keep all)
 	Slots        map[string]SlotConfig `yaml:"slots"`   // blue-green only
 	Pointer      PointerConfig         `yaml:"pointer"` // blue-green only
 }
