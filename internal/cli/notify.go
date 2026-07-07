@@ -1,29 +1,31 @@
 package cli
 
 import (
+	"context"
+
 	"github.com/RomanAgaltsev/gantry/internal/config"
 	"github.com/RomanAgaltsev/gantry/internal/notify"
 )
 
 // buildNotifier turns the config notifications block into a Dispatcher, resolving each
-// channel's secrets (webhook url/chat_id, smtp password).
-func buildNotifier(res config.SecretResolver, channels []config.NotifyChannel) (notify.Dispatcher, error) {
+// channel's secrets (webhook url/chat_id, smtp password) under ctx.
+func buildNotifier(ctx context.Context, res config.SecretResolver, channels []config.NotifyChannel) (notify.Dispatcher, error) {
 	var d notify.Dispatcher
 	for _, ch := range channels {
 		events := eventSet(ch.Events)
 		switch ch.Kind {
 		case "webhook", "slack", "telegram":
-			url, err := res.Resolve(ch.URL)
+			url, err := res.Resolve(ctx, ch.URL)
 			if err != nil {
 				return nil, err
 			}
-			chatID, err := res.Resolve(ch.ChatID)
+			chatID, err := res.Resolve(ctx, ch.ChatID)
 			if err != nil {
 				return nil, err
 			}
 			d = append(d, notify.Channel{Notifier: notify.WebhookNotifier{URL: url, ChatID: chatID, Shape: shapeFor(ch.Kind)}, Events: events})
 		case "email":
-			pw, err := res.Resolve(ch.SMTP.Password)
+			pw, err := res.Resolve(ctx, ch.SMTP.Password)
 			if err != nil {
 				return nil, err
 			}

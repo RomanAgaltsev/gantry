@@ -7,8 +7,6 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/config"
 	"github.com/RomanAgaltsev/gantry/internal/engine"
 	"github.com/RomanAgaltsev/gantry/internal/executor"
-	"github.com/RomanAgaltsev/gantry/internal/forge"
-	"github.com/RomanAgaltsev/gantry/internal/ledger"
 	"github.com/RomanAgaltsev/gantry/internal/logging"
 	"github.com/RomanAgaltsev/gantry/internal/notify"
 	"github.com/RomanAgaltsev/gantry/internal/verify"
@@ -28,12 +26,9 @@ func (nopObserver) DriftObserved(string, float64)                               
 
 // Deps are the long-lived collaborators a reconcile needs, built once by the serve command.
 type Deps struct {
-	Cfg                   *config.Config
-	Forge                 forge.Forge
-	Store                 engine.PinStore
-	Ledger                ledger.Ledger
+	Engine                *engine.Engine
 	Dispatch              notify.Dispatcher
-	ExecFor               func(env config.Environment) (executor.Executor, verify.Verifier, error)
+	ExecFor               func(ctx context.Context, env config.Environment) (executor.Executor, verify.Verifier, error)
 	Metrics               Observer           // nil ⇒ nopObserver
 	ReconcileTimeout      time.Duration      // per-env reconcile deadline; 0 ⇒ no deadline
 	Suppressor            *failureSuppressor // nil ⇒ default built in Run from ReconcileFailedRepeat
@@ -82,18 +77,18 @@ func Run(ctx context.Context, d Deps, o Options) error {
 }
 
 func reconcileAll(ctx context.Context, d Deps) {
-	syncer, canSync := d.Store.(engine.RemoteSyncer)
+	syncer, canSync := d.Engine.Store.(engine.RemoteSyncer)
 	if d.RemotePull && canSync {
 		if err := syncer.PullFF(ctx); err != nil {
 			// A divergence or transport error must not merge or crash: skip this cycle's work
 			// and alert, so the operator sees the split instead of silent drift (D1).
 			logging.From(ctx).Error("remote pull failed; skipping reconcile cycle", "error", err)
-			d.Dispatch.Dispatch(ctx, notify.Event{Kind: "reconcile_failed", Environment: "*", Time: time.Now(), Message: "remote pull failed: " + err.Error()})
+			d.Dispatch.Dispatch(ctx, notify.Event{Kind: notify.KindReconcileFailed, Environment: "*", Time: time.Now(), Message: "remote pull failed: " + err.Error()})
 			return
 		}
 	}
 	committed := false
-	for _, env := range d.Cfg.Environments {
+	for _, env := range d.Engine.Cfg.Environments {
 		if env.Source.Track == "" {
 			continue // promote-mode envs are advanced by humans, never on a timer (C3-D8)
 		}
@@ -105,14 +100,14 @@ func reconcileAll(ctx context.Context, d Deps) {
 	if d.RemotePush && canSync && committed {
 		if err := syncer.Push(ctx); err != nil {
 			logging.From(ctx).Error("remote push failed", "error", err)
-			d.Dispatch.Dispatch(ctx, notify.Event{Kind: "reconcile_failed", Environment: "*", Time: time.Now(), Message: "remote push failed: " + err.Error()})
+			d.Dispatch.Dispatch(ctx, notify.Event{Kind: notify.KindReconcileFailed, Environment: "*", Time: time.Now(), Message: "remote push failed: " + err.Error()})
 		}
 	}
 }
 
 func reconcileEnv(ctx context.Context, d Deps, env config.Environment) bool {
 	log := logging.From(ctx)
-	ex, vf, err := d.ExecFor(env)
+	ex, vf, err := d.ExecFor(ctx, env)
 	if err != nil {
 		log.Warn("skipping environment; executor build failed", "env", env.Name, "error", err)
 		return false
@@ -136,7 +131,7 @@ func reconcileEnv(ctx context.Context, d Deps, env config.Environment) bool {
 		defer cancel()
 	}
 	start := time.Now()
-	res, err := engine.Sync(ctx, d.Cfg, env.Name, d.Forge, ex, vf, d.Store, d.Ledger, engine.SyncOptions{})
+	res, err := d.Engine.Sync(ctx, env.Name, ex, vf, engine.SyncOptions{})
 	dur := time.Since(start)
 	d.Metrics.ReconcileDone(env.Name, res, err, dur)
 	if err != nil {
@@ -155,11 +150,11 @@ func reconcileEnv(ctx context.Context, d Deps, env config.Environment) bool {
 }
 
 func observeDrift(ctx context.Context, d Deps) {
-	for _, env := range d.Cfg.Environments {
+	for _, env := range d.Engine.Cfg.Environments {
 		if env.Source.Track == "" {
 			continue
 		}
-		rep, err := engine.Drift(ctx, d.Cfg, env.Name, d.Forge, d.Store)
+		rep, err := d.Engine.Drift(ctx, env.Name)
 		if err != nil {
 			continue // drift is a best-effort signal in the loop; a forge blip is logged elsewhere
 		}

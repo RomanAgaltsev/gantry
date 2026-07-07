@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/RomanAgaltsev/gantry/internal/config"
 	"github.com/RomanAgaltsev/gantry/internal/forge"
 )
 
@@ -33,27 +32,27 @@ func (r DriftReport) Drifted() bool { return len(r.Items) > 0 }
 // Drift reports tracked components whose latest published release differs from the
 // current pin and has been published longer than cfg.Drift threshold. Read-only:
 // it never writes, commits, or deploys. It errors when env is not track-mode.
-func Drift(ctx context.Context, cfg *config.Config, envName string, f forge.Forge, store PinStore) (DriftReport, error) {
-	env, ok := cfg.Environment(envName)
+func (e *Engine) Drift(ctx context.Context, envName string) (DriftReport, error) {
+	env, ok := e.Cfg.Environment(envName)
 	if !ok {
 		return DriftReport{}, fmt.Errorf("environment %q not found", envName)
 	}
 	if env.Source.Track == "" {
 		return DriftReport{}, fmt.Errorf("environment %q is not track-mode; drift applies to track-mode environments only", envName)
 	}
-	current, err := store.Read(env.PinFile)
+	current, err := e.Store.Read(ctx, env.PinFile)
 	if err != nil {
 		return DriftReport{}, err
 	}
-	threshold := cfg.Drift.ThresholdOrDefault()
+	threshold := e.Cfg.Drift.ThresholdOrDefault()
 	now := timeNow()
 
 	var rep DriftReport
-	for _, comp := range cfg.Components {
+	for _, comp := range e.Cfg.Components {
 		if comp.IsExplicit() {
 			continue // explicit pins have no gantry-known "latest" (B4-D3)
 		}
-		rel, err := f.LatestRelease(ctx, forge.Component{ID: comp.ID, Project: comp.Project, PinKey: comp.PinKey})
+		rel, err := e.Forge.LatestRelease(ctx, forge.Component{ID: comp.ID, Project: comp.Project, PinKey: comp.PinKey})
 		if err != nil {
 			return DriftReport{}, err
 		}

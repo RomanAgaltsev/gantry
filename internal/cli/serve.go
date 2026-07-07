@@ -98,9 +98,9 @@ func runServe(cmd *cobra.Command, interval string) error {
 		return err
 	}
 	res := config.DefaultResolver()
-	resolveVaultDefaults(&res, cfg)
+	resolveVaultDefaults(cmd.Context(), &res, cfg)
 
-	deps, err := serveDeps(cfg, path, res)
+	deps, err := serveDeps(cmd.Context(), cfg, path, res)
 	if err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func runServe(cmd *cobra.Command, interval string) error {
 	var bell <-chan struct{}
 	var bellMount doorbellMount
 	if cfg.Daemon.Doorbell.Enabled {
-		secret, err := res.Resolve(cfg.Daemon.Doorbell.Secret)
+		secret, err := res.Resolve(cmd.Context(), cfg.Daemon.Doorbell.Secret)
 		if err != nil {
 			return err
 		}
@@ -157,9 +157,9 @@ func runServe(cmd *cobra.Command, interval string) error {
 
 // serveDeps builds the daemon's long-lived collaborators from config: the forge client, the
 // git-backed pin store and ledger, the notification dispatcher, and the per-env executor
-// factory shared with the CLI verbs.
-func serveDeps(cfg *config.Config, path string, res config.SecretResolver) (*daemon.Deps, error) {
-	token, err := res.Resolve(cfg.Forge.Token)
+// factory shared with the CLI verbs. Secret refs resolve under ctx.
+func serveDeps(ctx context.Context, cfg *config.Config, path string, res config.SecretResolver) (*daemon.Deps, error) {
+	token, err := res.Resolve(ctx, cfg.Forge.Token)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +176,7 @@ func serveDeps(cfg *config.Config, path string, res config.SecretResolver) (*dae
 	if err != nil {
 		return nil, err
 	}
-	disp, err := notify.FromConfig(cfg, res)
+	disp, err := notify.FromConfig(ctx, cfg, res)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +185,7 @@ func serveDeps(cfg *config.Config, path string, res config.SecretResolver) (*dae
 	// anonymous interface type-assert so PinStore need not widen for the local-only case.
 	remotePull, remotePush := cfg.Git.Remote.Pull, cfg.Git.Remote.Push
 	if remotePull || remotePush {
-		token, err := res.Resolve(cfg.Git.Remote.Token)
+		token, err := res.Resolve(ctx, cfg.Git.Remote.Token)
 		if err != nil {
 			return nil, err
 		}
@@ -195,8 +195,9 @@ func serveDeps(cfg *config.Config, path string, res config.SecretResolver) (*dae
 			setter.SetRemoteAuth(cfg.Git.Remote.Username, token, firstNonEmpty(cfg.Git.Remote.Name, "origin"), cfg.Git.Remote.Branch)
 		}
 	}
+	eng := engine.New(cfg, forgeClient, store, led)
 	return &daemon.Deps{
-		Cfg: cfg, Forge: forgeClient, Store: store, Ledger: led,
+		Engine:   eng,
 		Dispatch: disp, ExecFor: execFor(res, cfg),
 		ReconcileTimeout:      cfg.Daemon.ReconcileTimeout.Duration(),
 		ReconcileFailedRepeat: cfg.Daemon.ReconcileFailedRepeat.Duration(),

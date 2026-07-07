@@ -31,7 +31,7 @@ func TestSync_EmitsStructuredLogs(t *testing.T) {
 	led := &fakeLedger{}
 	ex := &fakeExec{}
 
-	_, err := Sync(ctx, cfg, "test", f, ex, nil, store, led, SyncOptions{})
+	_, err := (&Engine{Cfg: cfg, Forge: f, Store: store, Ledger: led}).Sync(ctx, "test", ex, nil, SyncOptions{})
 	require.NoError(t, err)
 
 	out := buf.String()

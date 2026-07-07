@@ -49,7 +49,7 @@ func newDriftCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				rep, err := engine.Drift(cmd.Context(), d.cfg, e, d.forge, d.store)
+				rep, err := d.engine.Drift(cmd.Context(), e)
 				if err != nil {
 					return err
 				}

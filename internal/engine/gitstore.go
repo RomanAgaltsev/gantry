@@ -40,7 +40,8 @@ func NewGitStore(repoDir string, author object.Signature) (PinStore, error) {
 }
 
 // Read returns the pin set as committed at HEAD. A repo with no commits reads empty.
-func (s *gitStore) Read(pinFile string) (pin.Set, error) {
+// ctx is accepted for seam symmetry; the local git impl is synchronous and does not observe it.
+func (s *gitStore) Read(ctx context.Context, pinFile string) (pin.Set, error) {
 	ref, err := s.repo.Head()
 	if errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return pin.Set{}, nil
@@ -48,12 +49,12 @@ func (s *gitStore) Read(pinFile string) (pin.Set, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve HEAD: %w", err)
 	}
-	return s.ReadAt(ref.Hash().String(), pinFile)
+	return s.ReadAt(ctx, ref.Hash().String(), pinFile)
 }
 
 // ReadAt returns the pin set as committed at sha. A commit that does not track the
 // file reads as an empty set.
-func (s *gitStore) ReadAt(sha, pinFile string) (pin.Set, error) {
+func (s *gitStore) ReadAt(_ context.Context, sha, pinFile string) (pin.Set, error) {
 	commit, err := s.repo.CommitObject(plumbing.NewHash(sha))
 	if err != nil {
 		return nil, fmt.Errorf("load commit %s: %w", sha, err)
@@ -73,7 +74,7 @@ func (s *gitStore) ReadAt(sha, pinFile string) (pin.Set, error) {
 }
 
 // LatestCommit returns the SHA of the most recent commit that touched pinFile.
-func (s *gitStore) LatestCommit(pinFile string) (string, error) {
+func (s *gitStore) LatestCommit(_ context.Context, pinFile string) (string, error) {
 	name := filepath.ToSlash(pinFile)
 	iter, err := s.repo.Log(&git.LogOptions{FileName: &name})
 	if errors.Is(err, plumbing.ErrReferenceNotFound) {
@@ -94,7 +95,7 @@ func (s *gitStore) LatestCommit(pinFile string) (string, error) {
 }
 
 // ParentOf returns the first-parent SHA of sha, or ErrNoParent for a root commit.
-func (s *gitStore) ParentOf(sha string) (string, error) {
+func (s *gitStore) ParentOf(_ context.Context, sha string) (string, error) {
 	commit, err := s.repo.CommitObject(plumbing.NewHash(sha))
 	if err != nil {
 		return "", fmt.Errorf("load commit %s: %w", sha, err)
@@ -108,7 +109,7 @@ func (s *gitStore) ParentOf(sha string) (string, error) {
 // Resolve expands a revision (short SHA, full SHA, branch, or tag) to a full commit SHA.
 // It lets callers accept the abbreviated SHAs operators copy from `git log` / `gantry
 // history` instead of demanding the full 40-character form.
-func (s *gitStore) Resolve(rev string) (string, error) {
+func (s *gitStore) Resolve(_ context.Context, rev string) (string, error) {
 	h, err := s.repo.ResolveRevision(plumbing.Revision(rev))
 	if err != nil {
 		return "", fmt.Errorf("resolve revision %q: %w", rev, err)
@@ -117,7 +118,7 @@ func (s *gitStore) Resolve(rev string) (string, error) {
 }
 
 // WriteAndCommit writes pinFile, stages it, and commits, returning the new commit SHA.
-func (s *gitStore) WriteAndCommit(pinFile string, set pin.Set, msg string) (string, error) {
+func (s *gitStore) WriteAndCommit(_ context.Context, pinFile string, set pin.Set, msg string) (string, error) {
 	wt, err := s.repo.Worktree()
 	if err != nil {
 		return "", err

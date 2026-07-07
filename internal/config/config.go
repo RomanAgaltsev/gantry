@@ -416,7 +416,9 @@ func validateBlueGreen(env Environment) error {
 	return nil
 }
 
-var notifyEventKinds = map[string]bool{
+// NotifyEventKinds is the set of valid notify event kinds, for config validation. It is the
+// single source of truth mirrored by the notify.Kind* string constants.
+var NotifyEventKinds = map[string]bool{
 	"deployed": true, "promoted": true, "rolled_back": true,
 	"verify_failed": true, "drift_alarm": true, "reconcile_failed": true,
 }
@@ -445,7 +447,7 @@ func (c *Config) validateNotifications() error {
 			return fmt.Errorf("notifications[%d]: unsupported kind %q (want webhook|slack|telegram|email)", i, ch.Kind)
 		}
 		for _, ev := range ch.Events {
-			if !notifyEventKinds[ev] {
+			if !NotifyEventKinds[ev] {
 				return fmt.Errorf("notifications[%d]: unknown event %q (want deployed|promoted|rolled_back|verify_failed|drift_alarm|reconcile_failed)", i, ev)
 			}
 		}

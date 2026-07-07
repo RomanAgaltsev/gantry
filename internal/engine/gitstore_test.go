@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,7 +28,7 @@ func TestGitStore_CommitStampsCurrentTime(t *testing.T) {
 	require.NoError(t, err)
 
 	before := time.Now().Add(-time.Second)
-	_, err = store.WriteAndCommit(".env.versions.test", pin.Set{"A": "reg/a:v1"}, "msg")
+	_, err = store.WriteAndCommit(context.Background(), ".env.versions.test", pin.Set{"A": "reg/a:v1"}, "msg")
 	require.NoError(t, err)
 	after := time.Now().Add(time.Second)
 
@@ -48,16 +49,16 @@ func TestGitStore_ReadReadsCommittedHEADNotWorkingTree(t *testing.T) {
 	require.NoError(t, err)
 
 	// Empty repo (no commits) reads as an empty set, not an error.
-	got, err := store.Read(".env.versions.test")
+	got, err := store.Read(context.Background(), ".env.versions.test")
 	require.NoError(t, err)
 	require.Empty(t, got)
 
-	_, err = store.WriteAndCommit(".env.versions.test", pin.Set{"A": "reg/a:v1"}, "commit v1")
+	_, err = store.WriteAndCommit(context.Background(), ".env.versions.test", pin.Set{"A": "reg/a:v1"}, "commit v1")
 	require.NoError(t, err)
 
 	// An uncommitted working-tree edit must NOT be seen by Read (committed contract).
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env.versions.test"), []byte("A=reg/a:v2\n"), 0o644))
-	got, err = store.Read(".env.versions.test")
+	got, err = store.Read(context.Background(), ".env.versions.test")
 	require.NoError(t, err)
 	require.Equal(t, pin.Set{"A": "reg/a:v1"}, got)
 }
@@ -76,55 +77,55 @@ func TestGitStore_ReadAt_LatestCommit_ParentOf(t *testing.T) {
 	_, store := newPinRepo(t)
 	pinFile := ".env.versions.test"
 
-	sha1, err := store.WriteAndCommit(pinFile, pin.Set{"SVC_IMAGE": "reg/svc:v1"}, "pin v1")
+	sha1, err := store.WriteAndCommit(context.Background(), pinFile, pin.Set{"SVC_IMAGE": "reg/svc:v1"}, "pin v1")
 	require.NoError(t, err)
-	sha2, err := store.WriteAndCommit(pinFile, pin.Set{"SVC_IMAGE": "reg/svc:v2"}, "pin v2")
+	sha2, err := store.WriteAndCommit(context.Background(), pinFile, pin.Set{"SVC_IMAGE": "reg/svc:v2"}, "pin v2")
 	require.NoError(t, err)
 	require.NotEqual(t, sha1, sha2)
 
-	latest, err := store.LatestCommit(pinFile)
+	latest, err := store.LatestCommit(context.Background(), pinFile)
 	require.NoError(t, err)
 	require.Equal(t, sha2, latest)
 
-	at1, err := store.ReadAt(sha1, pinFile)
+	at1, err := store.ReadAt(context.Background(), sha1, pinFile)
 	require.NoError(t, err)
 	require.Equal(t, pin.Set{"SVC_IMAGE": "reg/svc:v1"}, at1)
 
-	parent, err := store.ParentOf(sha2)
+	parent, err := store.ParentOf(context.Background(), sha2)
 	require.NoError(t, err)
 	require.Equal(t, sha1, parent)
 }
 
 func TestGitStore_LatestCommit_NoHistory(t *testing.T) {
 	_, store := newPinRepo(t)
-	_, err := store.LatestCommit(".env.versions.test")
+	_, err := store.LatestCommit(context.Background(), ".env.versions.test")
 	require.ErrorIs(t, err, ErrNoHistory)
 }
 
 func TestGitStore_ParentOf_FirstCommit(t *testing.T) {
 	_, store := newPinRepo(t)
-	sha1, err := store.WriteAndCommit(".env.versions.test", pin.Set{"A": "x"}, "first")
+	sha1, err := store.WriteAndCommit(context.Background(), ".env.versions.test", pin.Set{"A": "x"}, "first")
 	require.NoError(t, err)
-	_, err = store.ParentOf(sha1)
+	_, err = store.ParentOf(context.Background(), sha1)
 	require.ErrorIs(t, err, ErrNoParent)
 }
 
 func TestGitStore_Resolve_ShortSHA(t *testing.T) {
 	_, store := newPinRepo(t)
-	full, err := store.WriteAndCommit(".env.versions.test", pin.Set{"A": "v1"}, "pin v1")
+	full, err := store.WriteAndCommit(context.Background(), ".env.versions.test", pin.Set{"A": "v1"}, "pin v1")
 	require.NoError(t, err)
 
-	got, err := store.Resolve(full[:8])
+	got, err := store.Resolve(context.Background(), full[:8])
 	require.NoError(t, err)
 	require.Equal(t, full, got)
 }
 
 func TestGitStore_Resolve_Unknown(t *testing.T) {
 	_, store := newPinRepo(t)
-	_, err := store.WriteAndCommit(".env.versions.test", pin.Set{"A": "v1"}, "pin v1")
+	_, err := store.WriteAndCommit(context.Background(), ".env.versions.test", pin.Set{"A": "v1"}, "pin v1")
 	require.NoError(t, err)
 
-	_, err = store.Resolve("deadbeef")
+	_, err = store.Resolve(context.Background(), "deadbeef")
 	require.Error(t, err)
 }
 
@@ -132,7 +133,7 @@ func TestGitStore_Resolve_Unknown(t *testing.T) {
 // builds the commit from the whole index and would otherwise sweep it in.
 func TestGitStore_WriteAndCommit_RefusesPreStagedFile(t *testing.T) {
 	dir, store := newPinRepo(t)
-	_, err := store.WriteAndCommit(".env.versions.test", pin.Set{"A": "v1"}, "pin v1")
+	_, err := store.WriteAndCommit(context.Background(), ".env.versions.test", pin.Set{"A": "v1"}, "pin v1")
 	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "user.txt"), []byte("x"), 0o600))
@@ -143,7 +144,7 @@ func TestGitStore_WriteAndCommit_RefusesPreStagedFile(t *testing.T) {
 	_, err = wt.Add("user.txt")
 	require.NoError(t, err)
 
-	_, err = store.WriteAndCommit(".env.versions.test", pin.Set{"A": "v2"}, "pin v2")
+	_, err = store.WriteAndCommit(context.Background(), ".env.versions.test", pin.Set{"A": "v2"}, "pin v2")
 	require.ErrorContains(t, err, "user.txt")
 }
 
@@ -151,7 +152,7 @@ func TestGitStore_WriteAndCommit_RefusesPreStagedFile(t *testing.T) {
 func TestGitStore_LatestCommit_SkipsUnrelated(t *testing.T) {
 	dir, store := newPinRepo(t)
 	pinFile := ".env.versions.test"
-	sha1, err := store.WriteAndCommit(pinFile, pin.Set{"A": "v1"}, "pin v1")
+	sha1, err := store.WriteAndCommit(context.Background(), pinFile, pin.Set{"A": "v1"}, "pin v1")
 	require.NoError(t, err)
 
 	// an unrelated commit that does not touch the pin file
@@ -162,7 +163,7 @@ func TestGitStore_LatestCommit_SkipsUnrelated(t *testing.T) {
 	_, err = wt.Commit("unrelated", &git.CommitOptions{Author: &object.Signature{Name: "x", Email: "x@y"}})
 	require.NoError(t, err)
 
-	latest, err := store.LatestCommit(pinFile)
+	latest, err := store.LatestCommit(context.Background(), pinFile)
 	require.NoError(t, err)
 	require.Equal(t, sha1, latest) // last commit that touched the pin file
 }
