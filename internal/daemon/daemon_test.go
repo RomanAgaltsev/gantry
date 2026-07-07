@@ -19,9 +19,7 @@ import (
 func TestRun_ReconcilesTrackEnvsAndStopsOnCancel(t *testing.T) {
 	spy := &spyExec{}
 	d := Deps{
-		Cfg:   twoEnvConfig(t), // one track env "test", one promote env "prod"
-		Forge: fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v1"}},
-		Store: newFakeStore(), Ledger: newFakeLedger(),
+		Engine:  engine.New(twoEnvConfig(t), fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v1"}}, newFakeStore(), newFakeLedger()),
 		ExecFor: func(config.Environment) (executor.Executor, verify.Verifier, error) { return spy, nil, nil },
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -42,7 +40,7 @@ func TestRun_ReconcilesTrackEnvsAndStopsOnCancel(t *testing.T) {
 func TestRun_SurvivesReconcileError(t *testing.T) {
 	// A forge that always errors must not stop the loop: it keeps ticking until cancel.
 	d := Deps{
-		Cfg: oneTrackEnv(t), Forge: errForge{}, Store: newFakeStore(), Ledger: newFakeLedger(),
+		Engine:  engine.New(oneTrackEnv(t), errForge{}, newFakeStore(), newFakeLedger()),
 		ExecFor: func(config.Environment) (executor.Executor, verify.Verifier, error) { return &spyExec{}, nil, nil },
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
@@ -74,10 +72,7 @@ func TestObserveDrift_ReportsMaxAndClearsWhenResolved(t *testing.T) {
 	obs := &recObserver{}
 	store := newFakeStore() // Read returns empty pins ⇒ latest ref differs ⇒ drift
 	d := Deps{
-		Cfg:     oneTrackEnv(t),
-		Forge:   fakeForge{rel: old},
-		Store:   store,
-		Ledger:  newFakeLedger(),
+		Engine:  engine.New(oneTrackEnv(t), fakeForge{rel: old}, store, newFakeLedger()),
 		Metrics: obs,
 	}
 	// Pass 1: component is behind by 10d ⇒ one DriftObserved(env,>0).
@@ -105,17 +100,14 @@ func (blockingExec) Deploy(ctx context.Context, _ executor.Plan) (executor.Resul
 
 func TestReconcileEnv_PerCycleTimeoutUnblocksWedgedDeploy(t *testing.T) {
 	d := Deps{
-		Cfg:              oneTrackEnv(t),
-		Forge:            fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v1"}},
-		Store:            newFakeStore(),
-		Ledger:           newFakeLedger(),
+		Engine:           engine.New(oneTrackEnv(t), fakeForge{rel: forge.Release{ImageRepository: "reg/svc", ImageTag: "v1"}}, newFakeStore(), newFakeLedger()),
 		ExecFor:          func(config.Environment) (executor.Executor, verify.Verifier, error) { return blockingExec{}, nil, nil },
 		ReconcileTimeout: 20 * time.Millisecond,
 	} // Dispatch left nil: Dispatcher.Dispatch on a nil slice is a no-op
 	d.Metrics = nopObserver{} // reconcileEnv is driven directly, not via Run which sets the nop default
 
 	done := make(chan struct{})
-	go func() { reconcileEnv(context.Background(), d, d.Cfg.Environments[0]); close(done) }()
+	go func() { reconcileEnv(context.Background(), d, d.Engine.Cfg.Environments[0]); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(time.Second):

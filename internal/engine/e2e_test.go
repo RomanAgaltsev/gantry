@@ -42,22 +42,22 @@ func TestE2E_SyncPromoteRollback(t *testing.T) {
 	ex := &fakeExec{}
 
 	// 1) sync test @v1 → green; promote v1 to prod (first prod green).
-	sr, err := Sync(context.Background(), c, "test", f, ex, nil, store, led, SyncOptions{})
+	sr, err := (&Engine{Cfg: c, Forge: f, Store: store, Ledger: led}).Sync(context.Background(), "test", ex, nil, SyncOptions{})
 	require.NoError(t, err)
 	require.True(t, sr.Deployed)
-	_, err = Promote(context.Background(), c, "test", "prod", "", ex, nil, store, led, PromoteOptions{})
+	_, err = (&Engine{Cfg: c, Forge: f, Store: store, Ledger: led}).Promote(context.Background(), "test", "prod", "", ex, nil, PromoteOptions{})
 	require.NoError(t, err)
 
 	// 2) bump to v2, sync test, promote v2 to prod (second prod green).
 	f.rel.ImageTag = "v2"
-	_, err = Sync(context.Background(), c, "test", f, ex, nil, store, led, SyncOptions{})
+	_, err = (&Engine{Cfg: c, Forge: f, Store: store, Ledger: led}).Sync(context.Background(), "test", ex, nil, SyncOptions{})
 	require.NoError(t, err)
-	pr, err := Promote(context.Background(), c, "test", "prod", "", ex, nil, store, led, PromoteOptions{})
+	pr, err := (&Engine{Cfg: c, Forge: f, Store: store, Ledger: led}).Promote(context.Background(), "test", "prod", "", ex, nil, PromoteOptions{})
 	require.NoError(t, err)
 	require.True(t, pr.Deployed)
 
 	// 3) rollback prod → the earlier green (v1).
-	rr, err := Rollback(context.Background(), c, "prod", ex, nil, store, led, RollbackOptions{})
+	rr, err := (&Engine{Cfg: c, Forge: f, Store: store, Ledger: led}).Rollback(context.Background(), "prod", ex, nil, RollbackOptions{})
 	require.NoError(t, err)
 	require.True(t, rr.Deployed)
 	require.NotEmpty(t, rr.ToSHA)

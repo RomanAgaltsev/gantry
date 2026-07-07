@@ -85,7 +85,7 @@ environments:
 	d, err := buildDeps(root, "", true, false)
 	require.NoError(t, err)
 	require.Equal(t, "", d.env)
-	require.NotNil(t, d.forge)
+	require.NotNil(t, d.engine.Forge)
 	require.Nil(t, d.exec) // read-only: no executor
 }
 
