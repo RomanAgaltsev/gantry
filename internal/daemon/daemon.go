@@ -87,6 +87,16 @@ func reconcileEnv(ctx context.Context, d Deps, env config.Environment) {
 		log.Warn("skipping environment; executor build failed", "env", env.Name, "error", err)
 		return
 	}
+	defer func() {
+		// The runner caches a pooled SSH connection; the daemon builds a fresh executor per env
+		// per cycle, so releasing it here avoids leaking one TCP+SSH connection per deploying
+		// cycle (C3). The one-shot CLI still relies on process exit.
+		if rc, ok := ex.(executor.RunnerCloser); ok {
+			if cerr := rc.CloseRunner(); cerr != nil {
+				logging.From(ctx).Warn("closing runner after reconcile", "env", env.Name, "error", cerr)
+			}
+		}
+	}()
 	// Bound each environment's reconcile so a wedged remote command (e.g. a stuck
 	// `docker compose pull`) cannot block the whole loop until shutdown (C2). The SSH
 	// runner unblocks on ctx cancellation.
