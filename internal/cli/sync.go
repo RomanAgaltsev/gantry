@@ -165,9 +165,11 @@ func newSyncCmd() *cobra.Command {
 		Use:   "sync",
 		Short: "Consume releases, pin, and deploy an environment",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := guardServe(cmd); err != nil {
+			release, err := acquireServeLock(cmd)
+			if err != nil {
 				return err
 			}
+			defer release()
 			d, err := buildDeps(cmd, envName, true, !dryRun)
 			if err != nil {
 				return err

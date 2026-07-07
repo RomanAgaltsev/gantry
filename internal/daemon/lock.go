@@ -59,15 +59,24 @@ func CheckFree(path string) error {
 	return fmt.Errorf("a gantry daemon is reconciling this repo (%s); retry when it is stopped", path)
 }
 
+// reclaimIfStale atomically steals a stale lock so exactly one racer wins: it renames the
+// stale lockfile to a unique name (only one os.Rename can succeed) and removes the renamed
+// copy. Racers that lose the rename see ENOENT and fall through to the O_EXCL create in
+// Acquire, which then either succeeds (they steal) or reports the fresh holder.
 func reclaimIfStale(path string) error {
 	pid, start, ok := readLock(path)
-	if !ok {
+	if !ok || !isStale(pid, start) {
 		return nil
 	}
-	if isStale(pid, start) {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return err
+	tmp := fmt.Sprintf("%s.stale.%d.%d", path, os.Getpid(), time.Now().UnixNano())
+	if err := os.Rename(path, tmp); err != nil {
+		if os.IsNotExist(err) {
+			return nil // another racer already stole it
 		}
+		return err
+	}
+	if err := os.Remove(tmp); err != nil && !os.IsNotExist(err) {
+		return err
 	}
 	return nil
 }
@@ -89,6 +98,8 @@ func readLock(path string) (pid int, start time.Time, ok bool) {
 	return pid, time.Unix(0, ns), true
 }
 
+// isStale reports whether a lock is abandoned: older than staleAfter (a backstop against PID
+// reuse, which processAlive cannot fully detect on Windows) or owned by a dead PID.
 func isStale(pid int, start time.Time) bool {
 	if time.Since(start) > staleAfter {
 		return true

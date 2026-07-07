@@ -12,9 +12,11 @@ func newSwitchCmd() *cobra.Command {
 		Use:   "switch",
 		Short: "Promote a blue-green environment's idle slot by switching the pointer",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := guardServe(cmd); err != nil {
+			release, err := acquireServeLock(cmd)
+			if err != nil {
 				return err
 			}
+			defer release()
 			d, err := buildDeps(cmd, envName, false, true)
 			if err != nil {
 				return err
