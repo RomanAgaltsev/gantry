@@ -4,6 +4,7 @@
 package ledger
 
 import (
+	"context"
 	"errors"
 	"time"
 )
@@ -40,18 +41,19 @@ type Entry struct {
 	By          string            `json:"by"` // "sync" | "deploy" | "promote" | "rollback"
 }
 
-// Ledger records and queries deploy outcomes.
+// Ledger records and queries deploy outcomes. ctx is accepted for seam symmetry and
+// future remote/SQL backends; the local git impl is synchronous and does not observe it.
 type Ledger interface {
 	// Record appends one outcome and persists it (the git impl commits the ledger file).
-	Record(e Entry) error
+	Record(ctx context.Context, e Entry) error
 	// Lookup returns the latest entry for (env, sha); ok is false if none exists.
-	Lookup(env, sha string) (Entry, bool, error)
-	// LatestGreen returns the most recent Result=="ok" entry for env, or ErrNoGreen.
-	LatestGreen(env string) (Entry, error)
+	Lookup(ctx context.Context, env, sha string) (Entry, bool, error)
+	// LatestGreen returns the most recent Result==ResultOK entry for env, or ErrNoGreen.
+	LatestGreen(ctx context.Context, env string) (Entry, error)
 	// History returns every entry for env, newest first.
-	History(env string) ([]Entry, error)
+	History(ctx context.Context, env string) ([]Entry, error)
 	// LatestHealthy returns the most recent ok+healthy entry for env, or ErrNoGreen.
-	LatestHealthy(env string) (Entry, error)
+	LatestHealthy(ctx context.Context, env string) (Entry, error)
 }
 
 // lookup returns the most recent entry matching (env, sha). Append-only, latest-wins.

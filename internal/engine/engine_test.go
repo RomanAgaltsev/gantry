@@ -36,41 +36,41 @@ type fakeStore struct {
 	resolve   map[string]string  // Resolve lookups (unmapped revs return unchanged)
 }
 
-func (s *fakeStore) Read(pinFile string) (pin.Set, error) {
+func (s *fakeStore) Read(_ context.Context, pinFile string) (pin.Set, error) {
 	if s.byFile != nil {
 		return s.byFile[pinFile], nil
 	}
 	return s.cur, nil
 }
 
-func (s *fakeStore) Resolve(rev string) (string, error) {
+func (s *fakeStore) Resolve(_ context.Context, rev string) (string, error) {
 	if full, ok := s.resolve[rev]; ok {
 		return full, nil
 	}
 	return rev, nil
 }
 
-func (s *fakeStore) ReadAt(sha, _ string) (pin.Set, error) {
+func (s *fakeStore) ReadAt(_ context.Context, sha, _ string) (pin.Set, error) {
 	if p, ok := s.atSHA[sha]; ok {
 		return p, nil
 	}
 	return pin.Set{}, nil
 }
 
-func (s *fakeStore) WriteAndCommit(_ string, set pin.Set, msg string) (string, error) {
+func (s *fakeStore) WriteAndCommit(_ context.Context, _ string, set pin.Set, msg string) (string, error) {
 	s.committed, s.msg = set, msg
 	s.headSHA = "newsha"
 	return "newsha", nil
 }
 
-func (s *fakeStore) LatestCommit(string) (string, error) {
+func (s *fakeStore) LatestCommit(context.Context, string) (string, error) {
 	if s.headSHA == "" {
 		return "", ErrNoHistory
 	}
 	return s.headSHA, nil
 }
 
-func (s *fakeStore) ParentOf(sha string) (string, error) {
+func (s *fakeStore) ParentOf(_ context.Context, sha string) (string, error) {
 	if p, ok := s.parent[sha]; ok {
 		return p, nil
 	}
@@ -82,7 +82,7 @@ type fakeLedger struct {
 	recordErr error // when set, Record fails with it
 }
 
-func (l *fakeLedger) Record(e ledger.Entry) error {
+func (l *fakeLedger) Record(_ context.Context, e ledger.Entry) error {
 	if l.recordErr != nil {
 		return l.recordErr
 	}
@@ -90,7 +90,7 @@ func (l *fakeLedger) Record(e ledger.Entry) error {
 	return nil
 }
 
-func (l *fakeLedger) Lookup(env, sha string) (ledger.Entry, bool, error) {
+func (l *fakeLedger) Lookup(_ context.Context, env, sha string) (ledger.Entry, bool, error) {
 	for i := len(l.entries) - 1; i >= 0; i-- {
 		if l.entries[i].Environment == env && l.entries[i].PinCommit == sha {
 			return l.entries[i], true, nil
@@ -99,7 +99,7 @@ func (l *fakeLedger) Lookup(env, sha string) (ledger.Entry, bool, error) {
 	return ledger.Entry{}, false, nil
 }
 
-func (l *fakeLedger) LatestGreen(env string) (ledger.Entry, error) {
+func (l *fakeLedger) LatestGreen(_ context.Context, env string) (ledger.Entry, error) {
 	for i := len(l.entries) - 1; i >= 0; i-- {
 		if l.entries[i].Environment == env && l.entries[i].Result == ledger.ResultOK {
 			return l.entries[i], nil
@@ -108,7 +108,7 @@ func (l *fakeLedger) LatestGreen(env string) (ledger.Entry, error) {
 	return ledger.Entry{}, ledger.ErrNoGreen
 }
 
-func (l *fakeLedger) History(env string) ([]ledger.Entry, error) {
+func (l *fakeLedger) History(_ context.Context, env string) ([]ledger.Entry, error) {
 	var out []ledger.Entry
 	for i := len(l.entries) - 1; i >= 0; i-- {
 		if l.entries[i].Environment == env {
@@ -118,7 +118,7 @@ func (l *fakeLedger) History(env string) ([]ledger.Entry, error) {
 	return out, nil
 }
 
-func (l *fakeLedger) LatestHealthy(env string) (ledger.Entry, error) {
+func (l *fakeLedger) LatestHealthy(_ context.Context, env string) (ledger.Entry, error) {
 	for i := len(l.entries) - 1; i >= 0; i-- {
 		if l.entries[i].Environment == env && l.entries[i].Result == ledger.ResultOK && l.entries[i].Healthy == ledger.HealthTrue {
 			return l.entries[i], nil

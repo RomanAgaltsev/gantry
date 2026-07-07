@@ -77,7 +77,7 @@ func (e *Engine) StatusMatrix(ctx context.Context) (Matrix, error) {
 	for _, env := range e.Cfg.Environments {
 		m.Environments = append(m.Environments, env.Name)
 
-		pins, err := e.Store.Read(env.PinFile)
+		pins, err := e.Store.Read(ctx, env.PinFile)
 		if err != nil {
 			return Matrix{}, err
 		}
@@ -94,7 +94,7 @@ func (e *Engine) StatusMatrix(ctx context.Context) (Matrix, error) {
 		m.Pins[env.Name] = cells
 		m.Drift[env.Name] = drift
 
-		hist, err := e.Ledger.History(env.Name)
+		hist, err := e.Ledger.History(ctx, env.Name)
 		if err != nil {
 			return Matrix{}, err
 		}

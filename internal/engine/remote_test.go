@@ -37,7 +37,7 @@ func TestGitStore_PushAndFastForwardPull(t *testing.T) {
 	require.True(t, ok, "NewGitStore returns a *gitStore")
 	storeA.SetRemoteAuth("", "", "origin", "")
 
-	_, err = storeA.WriteAndCommit(".env.versions.test", pin.Set{"SVC_IMAGE": "reg/svc:v1"}, "first")
+	_, err = storeA.WriteAndCommit(context.Background(), ".env.versions.test", pin.Set{"SVC_IMAGE": "reg/svc:v1"}, "first")
 	require.NoError(t, err)
 	require.NoError(t, storeA.Push(context.Background()))
 
@@ -52,20 +52,20 @@ func TestGitStore_PushAndFastForwardPull(t *testing.T) {
 	storeB, ok := sB.(*gitStore)
 	require.True(t, ok)
 	storeB.SetRemoteAuth("", "", "origin", "")
-	_, err = storeB.WriteAndCommit(".env.versions.test", pin.Set{"SVC_IMAGE": "reg/svc:v2"}, "second")
+	_, err = storeB.WriteAndCommit(context.Background(), ".env.versions.test", pin.Set{"SVC_IMAGE": "reg/svc:v2"}, "second")
 	require.NoError(t, err)
 	require.NoError(t, storeB.Push(context.Background()))
 
 	// A fast-forwards to B's commit (no divergence).
 	require.NoError(t, storeA.PullFF(context.Background()))
-	got, err := storeA.Read(".env.versions.test")
+	got, err := storeA.Read(context.Background(), ".env.versions.test")
 	require.NoError(t, err)
 	require.Equal(t, "reg/svc:v2", got["SVC_IMAGE"], "A fast-forwarded to B's pin")
 
 	// Divergence: A commits (without pushing), B commits+pushes; A's next pull is non-ff.
-	_, err = storeA.WriteAndCommit(".env.versions.test", pin.Set{"SVC_IMAGE": "reg/svc:divergent"}, "A diverges")
+	_, err = storeA.WriteAndCommit(context.Background(), ".env.versions.test", pin.Set{"SVC_IMAGE": "reg/svc:divergent"}, "A diverges")
 	require.NoError(t, err)
-	_, err = storeB.WriteAndCommit(".env.versions.test", pin.Set{"SVC_IMAGE": "reg/svc:other"}, "B diverges")
+	_, err = storeB.WriteAndCommit(context.Background(), ".env.versions.test", pin.Set{"SVC_IMAGE": "reg/svc:other"}, "B diverges")
 	require.NoError(t, err)
 	require.NoError(t, storeB.Push(context.Background()))
 	err = storeA.PullFF(context.Background())
