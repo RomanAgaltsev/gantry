@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.17.0](https://github.com/RomanAgaltsev/gantry/compare/v0.16.0...v0.17.0) (2026-07-07)
+
+
+### Features
+
+* **daemon:** reconcile_failed alert with repeat suppression (D7) ([7ac5ea8](https://github.com/RomanAgaltsev/gantry/commit/7ac5ea8bf45a22ff74ba9de01ea79ac3e91b8805))
+* **engine:** warn when a declared pin_key is missing from the deployed set (D3) ([aa5dafe](https://github.com/RomanAgaltsev/gantry/commit/aa5dafe12a19a7d7def11e67e961e59306e82321))
+* git.remote pull/push topology for fleet-safe daemon operation (D1) ([13f07a3](https://github.com/RomanAgaltsev/gantry/commit/13f07a32e6fc391cd66fd4b02969293d0d8a8743))
+* **notify:** first-class slack and telegram kinds over the webhook core (D6) ([2c10375](https://github.com/RomanAgaltsev/gantry/commit/2c10375c29143c09ea7e9bc6e08de77a963fc997))
+* report orphan pins and add gantry prune for pin-file subtraction (D2) ([1c1f51f](https://github.com/RomanAgaltsev/gantry/commit/1c1f51f06778798a78fc339414aad122f4bb11f9))
+
+
+### Bug Fixes
+
+* design - domain model ([370fe04](https://github.com/RomanAgaltsev/gantry/commit/370fe04bee350420f7df4f2cc4655989828548c3))
+* **gitlab:** skip prereleases so latest matches GitHub semantics (D5) ([eb02440](https://github.com/RomanAgaltsev/gantry/commit/eb024404e8fab9d2acac2d7c589506df1aa3396c))
+
 ## [0.16.0](https://github.com/RomanAgaltsev/gantry/compare/v0.15.0...v0.16.0) (2026-07-07)
 
 
