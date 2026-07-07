@@ -28,14 +28,18 @@ func (nopObserver) DriftObserved(string, float64)                               
 
 // Deps are the long-lived collaborators a reconcile needs, built once by the serve command.
 type Deps struct {
-	Cfg              *config.Config
-	Forge            forge.Forge
-	Store            engine.PinStore
-	Ledger           ledger.Ledger
-	Dispatch         notify.Dispatcher
-	ExecFor          func(env config.Environment) (executor.Executor, verify.Verifier, error)
-	Metrics          Observer      // nil ⇒ nopObserver
-	ReconcileTimeout time.Duration // per-env reconcile deadline; 0 ⇒ no deadline
+	Cfg                   *config.Config
+	Forge                 forge.Forge
+	Store                 engine.PinStore
+	Ledger                ledger.Ledger
+	Dispatch              notify.Dispatcher
+	ExecFor               func(env config.Environment) (executor.Executor, verify.Verifier, error)
+	Metrics               Observer           // nil ⇒ nopObserver
+	ReconcileTimeout      time.Duration      // per-env reconcile deadline; 0 ⇒ no deadline
+	Suppressor            *failureSuppressor // nil ⇒ default built in Run from ReconcileFailedRepeat
+	ReconcileFailedRepeat time.Duration      // window for collapsing flapping reconcile_failed alerts
+	RemotePull            bool               // ff-only pull from git.remote before each cycle (D1)
+	RemotePush            bool               // push to git.remote after a cycle that committed (D1)
 }
 
 // Options tunes the loop.
@@ -49,6 +53,13 @@ type Options struct {
 func Run(ctx context.Context, d Deps, o Options) error {
 	if d.Metrics == nil {
 		d.Metrics = nopObserver{}
+	}
+	if d.Suppressor == nil {
+		window := d.ReconcileFailedRepeat
+		if window <= 0 {
+			window = time.Hour
+		}
+		d.Suppressor = newFailureSuppressor(window)
 	}
 	log := logging.From(ctx)
 	log.Info("daemon started", "interval", o.Interval.String())
@@ -71,21 +82,40 @@ func Run(ctx context.Context, d Deps, o Options) error {
 }
 
 func reconcileAll(ctx context.Context, d Deps) {
+	syncer, canSync := d.Store.(engine.RemoteSyncer)
+	if d.RemotePull && canSync {
+		if err := syncer.PullFF(ctx); err != nil {
+			// A divergence or transport error must not merge or crash: skip this cycle's work
+			// and alert, so the operator sees the split instead of silent drift (D1).
+			logging.From(ctx).Error("remote pull failed; skipping reconcile cycle", "error", err)
+			d.Dispatch.Dispatch(ctx, notify.Event{Kind: "reconcile_failed", Environment: "*", Time: time.Now(), Message: "remote pull failed: " + err.Error()})
+			return
+		}
+	}
+	committed := false
 	for _, env := range d.Cfg.Environments {
 		if env.Source.Track == "" {
 			continue // promote-mode envs are advanced by humans, never on a timer (C3-D8)
 		}
-		reconcileEnv(ctx, d, env)
+		if reconcileEnv(ctx, d, env) {
+			committed = true
+		}
 	}
 	observeDrift(ctx, d)
+	if d.RemotePush && canSync && committed {
+		if err := syncer.Push(ctx); err != nil {
+			logging.From(ctx).Error("remote push failed", "error", err)
+			d.Dispatch.Dispatch(ctx, notify.Event{Kind: "reconcile_failed", Environment: "*", Time: time.Now(), Message: "remote push failed: " + err.Error()})
+		}
+	}
 }
 
-func reconcileEnv(ctx context.Context, d Deps, env config.Environment) {
+func reconcileEnv(ctx context.Context, d Deps, env config.Environment) bool {
 	log := logging.From(ctx)
 	ex, vf, err := d.ExecFor(env)
 	if err != nil {
 		log.Warn("skipping environment; executor build failed", "env", env.Name, "error", err)
-		return
+		return false
 	}
 	defer func() {
 		// The runner caches a pooled SSH connection; the daemon builds a fresh executor per env
@@ -114,7 +144,14 @@ func reconcileEnv(ctx context.Context, d Deps, env config.Environment) {
 	} else if res.Deployed {
 		log.Info("reconciled", "env", env.Name, "changes", len(res.Changes))
 	}
-	d.Dispatch.Dispatch(ctx, eventsFor(env.Name, res, err)...)
+	evs := eventsFor(env.Name, res, err)
+	// Collapse flapping reconcile_failed alerts to one per window; emit a recovery note on
+	// the first success after a failing streak (D7).
+	if d.Suppressor != nil {
+		evs = d.Suppressor.filter(env.Name, evs, err != nil, time.Now())
+	}
+	d.Dispatch.Dispatch(ctx, evs...)
+	return res.Deployed
 }
 
 func observeDrift(ctx context.Context, d Deps) {

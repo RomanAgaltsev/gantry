@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -11,6 +13,7 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/executor"
 	"github.com/RomanAgaltsev/gantry/internal/forge"
 	"github.com/RomanAgaltsev/gantry/internal/ledger"
+	"github.com/RomanAgaltsev/gantry/internal/logging"
 	"github.com/RomanAgaltsev/gantry/internal/pin"
 )
 
@@ -197,6 +200,39 @@ func cfg() *config.Config {
 			Name: "test", Source: config.Source{Track: "latest"}, PinFile: ".env.versions.test",
 		}},
 	}
+}
+
+func TestPrune_RemovesOrphanAndRedeploys(t *testing.T) {
+	// cfg() declares only SVC_IMAGE; OLD_IMAGE is an orphan in the pin file.
+	store := &fakeStore{
+		cur:     pin.Set{"SVC_IMAGE": "reg/svc:v1", "OLD_IMAGE": "reg/x:v0"},
+		headSHA: "h1",
+	}
+	ex := &fakeExec{}
+	res, err := Prune(context.Background(), cfg(), "test", ex, nil, store, &fakeLedger{}, PruneOptions{})
+	require.NoError(t, err)
+	require.Equal(t, []string{"OLD_IMAGE"}, res.Removed)
+	require.True(t, res.Deployed)
+	require.True(t, ex.called)
+	require.NotContains(t, store.committed, "OLD_IMAGE") // committed set dropped the orphan
+	require.Equal(t, "reg/svc:v1", store.committed["SVC_IMAGE"])
+}
+
+func TestDeploy_WarnsOnMissingPinKey(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := logging.Into(context.Background(), slog.New(slog.NewTextHandler(&buf, nil)))
+	c := &config.Config{
+		Components: []config.Component{
+			{ID: "a", PinKey: "A_IMAGE", Source: config.ComponentSource{Forge: "release"}},
+			{ID: "b", PinKey: "B_IMAGE", Source: config.ComponentSource{Forge: "release"}},
+		},
+		Environments: []config.Environment{{Name: "test", Source: config.Source{Track: "latest"}, PinFile: ".env.versions.test"}},
+	}
+	store := &fakeStore{cur: pin.Set{"A_IMAGE": "reg/a:v1"}, headSHA: "h1"} // B_IMAGE missing
+	_, err := Deploy(ctx, c, "test", &fakeExec{}, nil, store, &fakeLedger{})
+	require.NoError(t, err) // still deploys (warning, not refusal)
+	require.Contains(t, buf.String(), "B_IMAGE")
+	require.Contains(t, buf.String(), "missing")
 }
 
 func TestSync_NoDiffIsNoOp(t *testing.T) {

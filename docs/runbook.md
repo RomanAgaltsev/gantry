@@ -11,8 +11,12 @@ conceptual model of the ledger, promotion, and rollback, see
 - gantry **must own the working tree**: it builds each commit from the git index, so it
   refuses to act when unrelated changes are already staged
   (`refusing to commit: "<path>" is already staged`). Commit or unstage them first.
-- gantry commits locally and does **not** push. In CI the runner must push the pin **and**
-  ledger commits so promotion/rollback on another machine see the same history.
+- gantry commits locally and does **not** push by default. In CI the runner must push the pin
+  **and** ledger commits so promotion/rollback on another machine see the same history. A
+  daemon that must share history with other clones can instead enable `git.remote.pull/push`
+  (see the [Topology](daemon.md#topology-one-writer-clone-or-gitremote-sync) section) so it
+  fast-forward-pulls before each cycle and pushes after each commit — a divergence is a loud
+  stop, never a merge.
 - credentials are **SecretRefs** (`${env:…}`/`${file:…}` built in; `${cmd:…}`, `${sops:…}`,
   `${vault:…}` shell out to host CLIs). Point a credential at Vault/SOPS with e.g.
   `password: ${sops:secrets.enc.yaml#reg.password}` — but the matching `sops`/`vault` binary
@@ -29,6 +33,19 @@ gantry history --env test  # confirm the ok outcome
 
 `sync` is a no-op when nothing changed. If a previous deploy failed *after* its pin commit,
 `sync` reports `recovered` and redeploys automatically — no manual step needed.
+
+`plan` also reports **orphan pins** — keys present in the pin file but no longer declared in
+`gantry.yaml` (left behind when a component is deleted or its `pin_key` renamed). Remove them
+and drop the now-unwanted containers with:
+
+```bash
+gantry prune --env test --dry-run   # list the orphan keys it would remove
+gantry prune --env test             # remove them, commit, and redeploy the reduced set
+```
+
+`prune` reuses the normal write-commit-deploy path and refuses to prune a set down to empty
+(that would deploy with no images at all). Removing the component from `gantry.yaml` and
+running `prune` is the supported way to retire a component.
 
 ## Detect drift
 

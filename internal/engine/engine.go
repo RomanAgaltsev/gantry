@@ -23,6 +23,11 @@ var ErrNoHistory = errors.New("pin file has no commit history")
 // ErrNoParent is returned when a commit has no parent (the first commit).
 var ErrNoParent = errors.New("commit has no parent")
 
+// ErrNonFastForward is returned by a RemoteSyncer's PullFF when the remote has diverged from
+// local history — gantry's single-writer model does not merge; the operator must reconcile the
+// clones (review D1).
+var ErrNonFastForward = errors.New("remote has diverged; refusing non-fast-forward pull")
+
 // PinStore reads and commits an environment's pin file.
 type PinStore interface {
 	Read(pinFile string) (pin.Set, error)
@@ -168,6 +173,10 @@ func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor
 	if len(pins) == 0 {
 		return DeployResult{}, fmt.Errorf("pin file %q is empty; nothing to deploy", env.PinFile)
 	}
+	if missing := MissingKeys(cfg, pins); len(missing) > 0 {
+		logging.From(ctx).Warn("pin file is missing declared component keys; they will deploy with no image reference",
+			"env", envName, "missing", strings.Join(missing, ","))
+	}
 	sha, err := store.LatestCommit(env.PinFile)
 	if err != nil {
 		return DeployResult{}, err
@@ -177,6 +186,57 @@ func Deploy(ctx context.Context, cfg *config.Config, envName string, ex executor
 		return DeployResult{AutoRolledBack: rolledBackTo != "", RolledBackTo: rolledBackTo, VerifyFailed: verifyFailed}, err
 	}
 	return DeployResult{Pins: pins, Deployed: true}, nil
+}
+
+// PruneOptions tunes a Prune run.
+type PruneOptions struct{ DryRun bool }
+
+// PruneResult reports what a Prune did.
+type PruneResult struct {
+	Removed   []string // orphan pin keys removed
+	Committed string   // the new commit (or existing one if unchanged)
+	Deployed  bool
+	DryRun    bool
+}
+
+// Prune removes pin keys backed by no config component (review D2) from env's pin file,
+// commits the reduced set, and redeploys via the normal deploy path so the running stack drops
+// the orphaned component. A no-op (with no commit) when there are no orphans.
+func Prune(ctx context.Context, cfg *config.Config, envName string, ex executor.Executor, vf verify.Verifier, store PinStore, led ledger.Ledger, opts PruneOptions) (PruneResult, error) {
+	env, ok := cfg.Environment(envName)
+	if !ok {
+		return PruneResult{}, fmt.Errorf("environment %q not found", envName)
+	}
+	current, err := store.Read(env.PinFile)
+	if err != nil {
+		return PruneResult{}, err
+	}
+	orphans := Orphans(cfg, current)
+	if len(orphans) == 0 {
+		return PruneResult{}, nil
+	}
+	reduced := pin.Set{}
+	for k, v := range current {
+		reduced[k] = v
+	}
+	for _, k := range orphans {
+		delete(reduced, k)
+	}
+	if len(reduced) == 0 {
+		return PruneResult{Removed: orphans}, fmt.Errorf("refusing to prune %q to an empty pin set", envName)
+	}
+	if opts.DryRun {
+		return PruneResult{Removed: orphans, DryRun: true}, nil
+	}
+	msg := fmt.Sprintf("chore(%s): prune %d orphan pin(s)", envName, len(orphans))
+	newSHA, err := writePins(store, env.PinFile, reduced, msg)
+	if err != nil {
+		return PruneResult{Removed: orphans}, err
+	}
+	if _, _, err := deployVerifyRecover(ctx, cfg, envName, env.PinFile, reduced, newSHA, "prune", ex, vf, store, led); err != nil {
+		return PruneResult{Removed: orphans, Committed: newSHA}, err
+	}
+	return PruneResult{Removed: orphans, Committed: newSHA, Deployed: true}, nil
 }
 
 // deployAndRecord deploys pins for env and records the outcome keyed by sha. A nil executor

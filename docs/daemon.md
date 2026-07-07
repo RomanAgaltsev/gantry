@@ -19,6 +19,7 @@ daemon:
   interval: 60s    # reconcile period; minimum 1s
   listen:  ":9713" # HTTP bind address for /healthz
   reconcile_timeout: 5m # per-environment reconcile deadline; minimum 1s
+  reconcile_failed_repeat: 1h # suppress repeat reconcile_failed alerts per environment
   doorbell:        # optional forge-webhook trigger — see "Doorbell" below (C3c)
     enabled: false
 ```
@@ -28,6 +29,7 @@ daemon:
 | `interval` | `60s` | How often each track-mode environment is reconciled. Must be ≥ `1s`. Override once with `gantry serve --interval 30s`. |
 | `listen` | `:9713` | HTTP address `/healthz` and `/metrics` are served on. |
 | `reconcile_timeout` | `5m` | Per-environment deadline for one reconcile. A wedged remote command (e.g. a stuck `docker compose pull`) fails that env's reconcile after the timeout instead of blocking the loop; `/healthz` keeps answering `ok`. Must be ≥ `1s`. |
+| `reconcile_failed_repeat` | `1h` | A failing environment emits one `reconcile_failed` notification per window (so a flapping host doesn't spam); the first success after a failing streak emits a `deployed` recovery note. |
 | `doorbell` | disabled | Trigger an immediate reconcile from a forge webhook instead of waiting for the next tick. See [Doorbell](#doorbell). |
 
 Notifications are configured with the existing top-level [`notifications:`](notification.md)
@@ -69,6 +71,37 @@ This prevents the daemon and a one-off `sync`/`deploy`/`promote`/`rollback`/`swi
 writing the pin file and deploying concurrently. A lock whose owner process is dead (or
 older than 24h) is treated as stale and reclaimed, so a crashed daemon does not strand the
 repo.
+
+## Topology: one writer clone, or `git.remote` sync
+
+The lock is **per-filesystem** — it does not coordinate across machines. The supported
+default is **one writer clone per repo**: exactly one place runs `gantry serve` (and the CLI
+verbs against that clone), period. Running two daemons against two clones of the same repo
+with no coordination splits the ledger and pin history by default.
+
+When the daemon must run somewhere other than the only clone (e.g. it lives on a deploy host
+while operators and CI work from their own clones), turn it into a fleet-safe worker with the
+`git.remote` block:
+
+```yaml
+git:
+  remote:
+    name: origin      # default origin
+    branch: main      # optional; defaults to the current HEAD branch
+    pull: true        # fast-forward pull at the top of each reconcile cycle
+    push: true        # push after each cycle that committed
+    username: gantry  # HTTPS basic-auth username (token name); optional
+    token: ${env:GANTRY_GIT_TOKEN}  # required when pull/push is enabled (HTTPS auth)
+```
+
+With `pull: true`, the daemon fast-forward-pulls origin at the top of every cycle before any
+reconcile, so a Renovate bump to an explicit pin (or another clone's commit) arriving via
+origin is seen on the next tick. With `push: true`, it pushes after any cycle that committed
+its own pin change. gantry **never merges**: a non-fast-forward pull (the clones diverged) is
+a loud stop — it logs a `reconcile_failed` alert and skips that cycle's writes rather than
+creating a divergent merge. SSH remotes authenticate via the user's SSH agent and can leave
+`token` unset (the validation requires it whenever pull/push is on, since gantry cannot see
+the remote URL from config; SSH transport ignores it).
 
 ## `/healthz` and shutdown
 

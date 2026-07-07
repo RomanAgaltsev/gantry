@@ -60,11 +60,25 @@ type VerifyProbe struct {
 	Command      string `yaml:"command"`       // command
 }
 
-// GitConfig sets the identity gantry stamps on the pin commits it makes.
-// Both fields default (see Load) so the block is optional.
+// GitConfig sets the identity gantry stamps on the pin commits it makes, and optionally
+// turns the daemon into a fleet-safe worker that fast-forward-pulls and pushes a remote so
+// multiple clones of the same repo converge (review D1).
 type GitConfig struct {
-	AuthorName  string `yaml:"author_name"`
-	AuthorEmail string `yaml:"author_email"`
+	AuthorName  string       `yaml:"author_name"`
+	AuthorEmail string       `yaml:"author_email"`
+	Remote      RemoteConfig `yaml:"remote"` // optional; when unset the daemon works the local clone only
+}
+
+// RemoteConfig turns the daemon into a fleet-safe worker: when Pull/Push are enabled it
+// fast-forward-pulls before each reconcile cycle and pushes after each cycle that committed,
+// so multiple clones of the same repo converge instead of splitting the ledger (review D1).
+type RemoteConfig struct {
+	Name     string    `yaml:"name"`     // remote name; default "origin"
+	Branch   string    `yaml:"branch"`   // branch to pull/push; default the current HEAD branch
+	Pull     bool      `yaml:"pull"`     // ff-only pull at the top of each reconcile cycle
+	Push     bool      `yaml:"push"`     // push after each cycle that committed
+	Username string    `yaml:"username"` // HTTPS basic-auth username (e.g. a token name); optional
+	Token    SecretRef `yaml:"token"`    // HTTPS auth token/password; a SecretRef
 }
 
 // ForgeConfig selects and configures the forge adapter.
@@ -167,10 +181,11 @@ type ComponentSource struct {
 // DaemonConfig configures `gantry serve`. Optional; every field defaults so an existing
 // config runs the daemon with sane values.
 type DaemonConfig struct {
-	Interval         Duration `yaml:"interval"`          // reconcile period; default 60s
-	Listen           string   `yaml:"listen"`            // HTTP bind address; default ":9713"
-	ReconcileTimeout Duration `yaml:"reconcile_timeout"` // per-env reconcile deadline; default 5m
-	Doorbell         Doorbell `yaml:"doorbell"`          // C3c; disabled by default
+	Interval              Duration `yaml:"interval"`                // reconcile period; default 60s
+	Listen                string   `yaml:"listen"`                  // HTTP bind address; default ":9713"
+	ReconcileTimeout      Duration `yaml:"reconcile_timeout"`       // per-env reconcile deadline; default 5m
+	ReconcileFailedRepeat Duration `yaml:"reconcile_failed_repeat"` // suppress repeat reconcile_failed alerts; default 1h
+	Doorbell              Doorbell `yaml:"doorbell"`                // C3c; disabled by default
 }
 
 // Doorbell configures the optional forge-webhook trigger (C3c).
@@ -221,6 +236,9 @@ func Load(path string) (*Config, error) {
 	if c.Git.AuthorEmail == "" {
 		c.Git.AuthorEmail = "gantry@local"
 	}
+	if c.Git.Remote.Name == "" {
+		c.Git.Remote.Name = "origin"
+	}
 	if c.Forge.Kind == "github" && c.Forge.BaseURL == "" {
 		c.Forge.BaseURL = "https://api.github.com"
 	}
@@ -265,7 +283,20 @@ func (c *Config) validate() error {
 	if err := c.validateNotifications(); err != nil {
 		return err
 	}
+	if err := c.validateRemote(); err != nil {
+		return err
+	}
 	return c.validateDaemon()
+}
+
+// validateRemote checks the optional git.remote block: push/pull over HTTPS needs a token to
+// authenticate (SSH remotes can leave it unset, but gantry cannot see the remote URL from
+// config, so it requires the token whenever pull/push is enabled and lets SSH ignore it).
+func (c *Config) validateRemote() error {
+	if (c.Git.Remote.Pull || c.Git.Remote.Push) && strings.TrimSpace(c.Git.Remote.Token.Raw) == "" {
+		return errors.New("git.remote.pull/push requires git.remote.token (HTTPS auth)")
+	}
+	return nil
 }
 
 func (c *Config) validateComponents() error {
@@ -387,15 +418,19 @@ func validateBlueGreen(env Environment) error {
 
 var notifyEventKinds = map[string]bool{
 	"deployed": true, "promoted": true, "rolled_back": true,
-	"verify_failed": true, "drift_alarm": true,
+	"verify_failed": true, "drift_alarm": true, "reconcile_failed": true,
 }
 
+//nolint:gocognit // the per-kind switch is naturally a flat dispatch; splitting it hurts readability
 func (c *Config) validateNotifications() error {
 	for i, ch := range c.Notifications {
 		switch ch.Kind {
-		case "webhook":
+		case "webhook", "slack", "telegram":
 			if strings.TrimSpace(ch.URL.Raw) == "" {
-				return fmt.Errorf("notifications[%d]: webhook requires url", i)
+				return fmt.Errorf("notifications[%d]: %s requires url", i, ch.Kind)
+			}
+			if ch.Kind == "telegram" && strings.TrimSpace(ch.ChatID.Raw) == "" {
+				return fmt.Errorf("notifications[%d]: telegram requires chat_id", i)
 			}
 		case "email":
 			if ch.SMTP.Host == "" || ch.From == "" || len(ch.To) == 0 {
@@ -407,11 +442,11 @@ func (c *Config) validateNotifications() error {
 				return fmt.Errorf("notifications[%d]: unsupported smtp.tls %q (want starttls|implicit)", i, ch.SMTP.TLS)
 			}
 		default:
-			return fmt.Errorf("notifications[%d]: unsupported kind %q (want webhook|email)", i, ch.Kind)
+			return fmt.Errorf("notifications[%d]: unsupported kind %q (want webhook|slack|telegram|email)", i, ch.Kind)
 		}
 		for _, ev := range ch.Events {
 			if !notifyEventKinds[ev] {
-				return fmt.Errorf("notifications[%d]: unknown event %q (want deployed|promoted|rolled_back|verify_failed|drift_alarm)", i, ev)
+				return fmt.Errorf("notifications[%d]: unknown event %q (want deployed|promoted|rolled_back|verify_failed|drift_alarm|reconcile_failed)", i, ev)
 			}
 		}
 	}
@@ -429,6 +464,9 @@ func (c *Config) defaultDaemon() {
 	}
 	if c.Daemon.ReconcileTimeout.Duration() == 0 {
 		c.Daemon.ReconcileTimeout = DurationOf(5 * time.Minute)
+	}
+	if c.Daemon.ReconcileFailedRepeat.Duration() == 0 {
+		c.Daemon.ReconcileFailedRepeat = DurationOf(1 * time.Hour)
 	}
 	if c.Daemon.Doorbell.Path == "" {
 		c.Daemon.Doorbell.Path = "/hooks/forge"
