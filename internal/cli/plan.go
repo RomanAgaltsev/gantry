@@ -32,6 +32,9 @@ func newPlanCmd() *cobra.Command {
 					cmd.Printf("orphan pins (in pin file, not in config): %s — run `gantry prune --env %s`\n",
 						strings.Join(orphans, ", "), d.env)
 				}
+				if missing := engine.MissingKeys(d.cfg, current); len(missing) > 0 {
+					cmd.Printf("missing pins (in config, not in pin file): %s\n", strings.Join(missing, ", "))
+				}
 			}
 			return nil
 		},
