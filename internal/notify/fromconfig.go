@@ -40,7 +40,7 @@ func buildNotifier(ch config.NotifyChannel, res config.SecretResolver) (Notifier
 		if err != nil {
 			return nil, err
 		}
-		return NewEmailNotifier(ch.SMTP.Host, ch.SMTP.Port, ch.SMTP.Username, pw, ch.From, ch.To), nil
+		return NewEmailNotifier(ch.SMTP.Host, ch.SMTP.Port, ch.SMTP.Username, pw, ch.From, ch.To, ch.SMTP.TLS), nil
 	default:
 		return nil, fmt.Errorf("notifications: unsupported kind %q", ch.Kind)
 	}
