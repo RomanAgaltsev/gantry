@@ -533,7 +533,7 @@ func TestLoad_DaemonDefaults(t *testing.T) {
 	cfg, err := Load(writeCfg(t, goodCfg)) // no daemon: block → all fields default
 	require.NoError(t, err)
 	require.Equal(t, 60*time.Second, cfg.Daemon.Interval.Duration())
-	require.Equal(t, ":9713", cfg.Daemon.Listen)
+	require.Equal(t, "127.0.0.1:9713", cfg.Daemon.Listen)
 	require.False(t, cfg.Daemon.Doorbell.Enabled)
 	require.Equal(t, "/hooks/forge", cfg.Daemon.Doorbell.Path)
 }

@@ -125,12 +125,21 @@ func withDefaultPort(addr string) string {
 	return addr
 }
 
+// knownHostsCallback builds a host-key callback from the known_hosts contents.
+// golang.org/x/crypto's knownhosts.New only reads from a file path, so the contents are
+// written to a 0600 temp file, parsed, and removed immediately (S3). The material is public
+// host keys and the window is momentary; if a future x/crypto exposes an in-memory parser,
+// drop the temp file.
 func knownHostsCallback(contents string) (ssh.HostKeyCallback, error) {
 	f, err := os.CreateTemp("", "gantry-known-hosts-*")
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = os.Remove(f.Name()) }() //nolint:gosec // best-effort cleanup of a temp file
+	if err := f.Chmod(0o600); err != nil {     // ensure not world-readable regardless of umask (S3)
+		_ = f.Close() //nolint:gosec // best-effort close before returning the chmod error
+		return nil, err
+	}
 	if _, err := f.WriteString(contents); err != nil {
 		return nil, err
 	}

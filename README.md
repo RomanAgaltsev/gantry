@@ -100,6 +100,7 @@ operational error.
 - [Promotion](docs/promotion.md) · [Drift](docs/drift.md)
 - [Daemon](docs/daemon.md) · [Observability](docs/observability.md)
 - [Secrets](docs/secrets.md) · [Notifications](docs/notifications.md) · [Runbook](docs/runbook.md)
+- [Security model](docs/security.md)
 
 ## License
 
