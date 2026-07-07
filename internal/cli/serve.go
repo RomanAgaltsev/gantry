@@ -195,8 +195,9 @@ func serveDeps(cfg *config.Config, path string, res config.SecretResolver) (*dae
 			setter.SetRemoteAuth(cfg.Git.Remote.Username, token, firstNonEmpty(cfg.Git.Remote.Name, "origin"), cfg.Git.Remote.Branch)
 		}
 	}
+	eng := engine.New(cfg, forgeClient, store, led)
 	return &daemon.Deps{
-		Cfg: cfg, Forge: forgeClient, Store: store, Ledger: led,
+		Engine:   eng,
 		Dispatch: disp, ExecFor: execFor(res, cfg),
 		ReconcileTimeout:      cfg.Daemon.ReconcileTimeout.Duration(),
 		ReconcileFailedRepeat: cfg.Daemon.ReconcileFailedRepeat.Duration(),

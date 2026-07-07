@@ -2,8 +2,6 @@ package cli
 
 import (
 	"github.com/spf13/cobra"
-
-	"github.com/RomanAgaltsev/gantry/internal/engine"
 )
 
 func newSwitchCmd() *cobra.Command {
@@ -21,7 +19,7 @@ func newSwitchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := engine.Switch(cmd.Context(), d.cfg, envName, d.exec, d.verify, d.store, d.ledger)
+			res, err := d.engine.Switch(cmd.Context(), envName, d.exec, d.verify)
 			if err != nil {
 				return err
 			}

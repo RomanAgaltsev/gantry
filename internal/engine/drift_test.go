@@ -49,7 +49,7 @@ func TestDrift(t *testing.T) {
 		cfg := driftCfg(threshold, config.Component{ID: "api", Project: "demo/api", PinKey: "API_IMAGE"})
 		store := &fakeStore{cur: pin.Set{"API_IMAGE": "reg/api:v2"}}
 		f := driftForge{byID: map[string]forge.Release{"api": rel("reg/api", "v2", stale)}}
-		rep, err := Drift(context.Background(), cfg, "test", f, store)
+		rep, err := (&Engine{Cfg: cfg, Forge: f, Store: store}).Drift(context.Background(), "test")
 		require.NoError(t, err)
 		require.False(t, rep.Drifted())
 	})
@@ -58,7 +58,7 @@ func TestDrift(t *testing.T) {
 		cfg := driftCfg(threshold, config.Component{ID: "api", Project: "demo/api", PinKey: "API_IMAGE"})
 		store := &fakeStore{cur: pin.Set{"API_IMAGE": "reg/api:v1"}}
 		f := driftForge{byID: map[string]forge.Release{"api": rel("reg/api", "v2", fresh)}}
-		rep, err := Drift(context.Background(), cfg, "test", f, store)
+		rep, err := (&Engine{Cfg: cfg, Forge: f, Store: store}).Drift(context.Background(), "test")
 		require.NoError(t, err)
 		require.False(t, rep.Drifted())
 	})
@@ -67,7 +67,7 @@ func TestDrift(t *testing.T) {
 		cfg := driftCfg(threshold, config.Component{ID: "api", Project: "demo/api", PinKey: "API_IMAGE"})
 		store := &fakeStore{cur: pin.Set{"API_IMAGE": "reg/api:v1"}}
 		f := driftForge{byID: map[string]forge.Release{"api": rel("reg/api", "v2", stale)}}
-		rep, err := Drift(context.Background(), cfg, "test", f, store)
+		rep, err := (&Engine{Cfg: cfg, Forge: f, Store: store}).Drift(context.Background(), "test")
 		require.NoError(t, err)
 		require.True(t, rep.Drifted())
 		require.Len(t, rep.Items, 1)
@@ -81,7 +81,7 @@ func TestDrift(t *testing.T) {
 		cfg := driftCfg(threshold, config.Component{ID: "pg", PinKey: "PG_IMAGE", Source: config.ComponentSource{Pin: "explicit"}})
 		store := &fakeStore{cur: pin.Set{"PG_IMAGE": "postgres:15"}}
 		f := driftForge{byID: map[string]forge.Release{}} // never consulted
-		rep, err := Drift(context.Background(), cfg, "test", f, store)
+		rep, err := (&Engine{Cfg: cfg, Forge: f, Store: store}).Drift(context.Background(), "test")
 		require.NoError(t, err)
 		require.False(t, rep.Drifted())
 	})
@@ -90,7 +90,7 @@ func TestDrift(t *testing.T) {
 		cfg := driftCfg(threshold, config.Component{ID: "api", Project: "demo/api", PinKey: "API_IMAGE"})
 		store := &fakeStore{cur: pin.Set{}} // nothing pinned yet
 		f := driftForge{byID: map[string]forge.Release{"api": rel("reg/api", "v1", stale)}}
-		rep, err := Drift(context.Background(), cfg, "test", f, store)
+		rep, err := (&Engine{Cfg: cfg, Forge: f, Store: store}).Drift(context.Background(), "test")
 		require.NoError(t, err)
 		require.True(t, rep.Drifted())
 		require.Equal(t, "", rep.Items[0].PinnedRef)
@@ -100,7 +100,7 @@ func TestDrift(t *testing.T) {
 		cfg := driftCfg(threshold, config.Component{ID: "api", Project: "demo/api", PinKey: "API_IMAGE"})
 		store := &fakeStore{cur: pin.Set{}}
 		f := driftForge{byID: map[string]forge.Release{}}
-		_, err := Drift(context.Background(), cfg, "prod", f, store)
+		_, err := (&Engine{Cfg: cfg, Forge: f, Store: store}).Drift(context.Background(), "prod")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "track-mode")
 	})

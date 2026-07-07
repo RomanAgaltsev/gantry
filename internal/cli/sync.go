@@ -19,14 +19,12 @@ import (
 )
 
 type deps struct {
-	cfg      *config.Config
-	forge    forge.Forge
+	engine   *engine.Engine
 	exec     executor.Executor
 	verify   verify.Verifier
-	store    engine.PinStore
-	ledger   ledger.Ledger
 	notifier notify.Dispatcher
 	env      string
+	cfg      *config.Config // kept for the many verbs that read cfg directly (env lookup, thresholds)
 }
 
 // buildDeps wires the engine's collaborators from config. The forge is built only when
@@ -91,7 +89,8 @@ func buildDeps(cmd *cobra.Command, envName string, needForge, needExec bool) (*d
 	if err != nil {
 		return nil, err
 	}
-	return &deps{cfg: cfg, forge: f, exec: ex, verify: vf, store: store, ledger: led, notifier: notifier, env: envName}, nil
+	eng := engine.New(cfg, f, store, led)
+	return &deps{engine: eng, exec: ex, verify: vf, notifier: notifier, env: envName, cfg: cfg}, nil
 }
 
 // resolveVaultDefaults resolves the ambient secrets.vault address/token onto res so any
@@ -178,7 +177,7 @@ func newSyncCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := engine.Sync(cmd.Context(), d.cfg, d.env, d.forge, d.exec, d.verify, d.store, d.ledger, engine.SyncOptions{DryRun: dryRun})
+			res, err := d.engine.Sync(cmd.Context(), d.env, d.exec, d.verify, engine.SyncOptions{DryRun: dryRun})
 			d.notifier.Dispatch(cmd.Context(), syncEvents(envName, res, err)...)
 			if err != nil {
 				if note := autoRollbackNote(envName, res.RolledBackTo); note != "" {

@@ -18,13 +18,13 @@ func newPlanCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := engine.Sync(cmd.Context(), d.cfg, d.env, d.forge, d.exec, nil, d.store, d.ledger, engine.SyncOptions{DryRun: true})
+			res, err := d.engine.Sync(cmd.Context(), d.env, d.exec, nil, engine.SyncOptions{DryRun: true})
 			if err != nil {
 				return err
 			}
 			printChanges(cmd, res.Changes, res.Deployed, res.Recovered)
 			if env, ok := d.cfg.Environment(d.env); ok {
-				current, rerr := d.store.Read(env.PinFile)
+				current, rerr := d.engine.Store.Read(env.PinFile)
 				if rerr != nil {
 					return rerr
 				}

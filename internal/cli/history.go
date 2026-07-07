@@ -14,7 +14,7 @@ func newHistoryCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			entries, err := d.ledger.History(envName)
+			entries, err := d.engine.Ledger.History(envName)
 			if err != nil {
 				return err
 			}

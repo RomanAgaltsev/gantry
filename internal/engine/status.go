@@ -4,9 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/RomanAgaltsev/gantry/internal/config"
 	"github.com/RomanAgaltsev/gantry/internal/forge"
-	"github.com/RomanAgaltsev/gantry/internal/ledger"
 	"github.com/RomanAgaltsev/gantry/internal/logging"
 )
 
@@ -49,7 +47,7 @@ type Matrix struct {
 // release once (a property of the component, not the environment), reads every
 // environment's pin file, and reads each environment's newest ledger entry.
 // Read-only: no commit, no deploy.
-func StatusMatrix(ctx context.Context, cfg *config.Config, f forge.Forge, store PinStore, led ledger.Ledger) (Matrix, error) {
+func (e *Engine) StatusMatrix(ctx context.Context) (Matrix, error) {
 	m := Matrix{
 		Latest: map[string]string{},
 		Pins:   map[string]map[string]string{},
@@ -57,13 +55,13 @@ func StatusMatrix(ctx context.Context, cfg *config.Config, f forge.Forge, store 
 	}
 
 	// Latest per component (once, C1-D6).
-	for _, comp := range cfg.Components {
+	for _, comp := range e.Cfg.Components {
 		m.Components = append(m.Components, comp.PinKey)
 		if comp.IsExplicit() {
 			m.Latest[comp.PinKey] = untrackedRef
 			continue
 		}
-		rel, err := f.LatestRelease(ctx, forge.Component{ID: comp.ID, Project: comp.Project, PinKey: comp.PinKey})
+		rel, err := e.Forge.LatestRelease(ctx, forge.Component{ID: comp.ID, Project: comp.Project, PinKey: comp.PinKey})
 		if err != nil {
 			// One component's forge error (a repo without a release, a 404) degrades this cell
 			// instead of failing the whole matrix — you most need status during an incident (C5).
@@ -76,16 +74,16 @@ func StatusMatrix(ctx context.Context, cfg *config.Config, f forge.Forge, store 
 
 	// Pins + drift + health per environment.
 	now := timeNow()
-	for _, env := range cfg.Environments {
+	for _, env := range e.Cfg.Environments {
 		m.Environments = append(m.Environments, env.Name)
 
-		pins, err := store.Read(env.PinFile)
+		pins, err := e.Store.Read(env.PinFile)
 		if err != nil {
 			return Matrix{}, err
 		}
 		cells := map[string]string{}
 		drift := map[string]bool{}
-		for _, comp := range cfg.Components {
+		for _, comp := range e.Cfg.Components {
 			ref := pins[comp.PinKey]
 			cells[comp.PinKey] = ref
 			// An error cell (release fetch failed) is excluded from drift: "latest unavailable"
@@ -96,14 +94,14 @@ func StatusMatrix(ctx context.Context, cfg *config.Config, f forge.Forge, store 
 		m.Pins[env.Name] = cells
 		m.Drift[env.Name] = drift
 
-		hist, err := led.History(env.Name)
+		hist, err := e.Ledger.History(env.Name)
 		if err != nil {
 			return Matrix{}, err
 		}
 		h := EnvHealth{Env: env.Name}
 		if len(hist) > 0 {
-			e := hist[0] // newest first
-			h.Result, h.Healthy, h.Age, h.HasData = string(e.Result), string(e.Healthy), now.Sub(e.DeployedAt), true
+			entry := hist[0] // newest first
+			h.Result, h.Healthy, h.Age, h.HasData = string(entry.Result), string(entry.Healthy), now.Sub(entry.DeployedAt), true
 		}
 		m.Health = append(m.Health, h)
 	}
