@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/RomanAgaltsev/gantry/compare/v0.17.0...v0.17.1) (2026-07-07)
+
+
+### Bug Fixes
+
+* architecture ([2835598](https://github.com/RomanAgaltsev/gantry/commit/28355982f9c34418087abff5664af83930c30f8e))
+
 ## [0.17.0](https://github.com/RomanAgaltsev/gantry/compare/v0.16.0...v0.17.0) (2026-07-07)
 
 
