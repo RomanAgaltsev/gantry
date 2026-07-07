@@ -42,3 +42,43 @@ Two persistent flags control the diagnostic log on stderr:
 Logs are structured (`slog`). Use `--log-format json` when shipping logs to a
 collector. The daemon exposes Prometheus metrics — see
 [daemon.md#metrics](daemon.md#metrics); a short-lived CLI run has nothing to scrape.
+
+## Example Prometheus alert rules
+
+The daemon exports the counters and gauges listed in
+[daemon.md#metrics](daemon.md#metrics). The rules below are a starting point;
+adjust thresholds to your fleet.
+
+```yaml
+groups:
+  - name: gantry
+    rules:
+      - alert: GantryDriftStuck
+        # Fires while a component's latest release is unconsumed. The daemon writes
+        # gantry_drift_age_seconds every pass and resets it to 0 when drift resolves, so
+        # this alert auto-resolves once the pin catches up.
+        expr: gantry_drift_age_seconds > 86400
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "gantry drift on {{ $labels.env }} > 24h"
+
+      - alert: GantryVerifyFailures
+        expr: increase(gantry_verify_failures_total[15m]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "gantry post-deploy verify failing on {{ $labels.env }}"
+
+      - alert: GantryReconcileStalled
+        # No successful reconcile recently (a deploy or a no-change pass both count).
+        expr: increase(gantry_reconcile_total{result="deployed"}[1h]) == 0 and increase(gantry_reconcile_total{result="nochange"}[1h]) == 0
+        for: 1h
+        labels: { severity: critical }
+        annotations:
+          summary: "gantry reconcile loop appears stalled"
+```
+
+`GantryDriftStuck` relies on the gauge resetting to 0 on resolve: that behaviour
+shipped with the drift-observe fix (the gauge is written every pass, not only
+when drift is found), so the alert clears as soon as the environment's pin
+catches up to the latest release.
