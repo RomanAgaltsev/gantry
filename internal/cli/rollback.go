@@ -13,9 +13,11 @@ func newRollbackCmd() *cobra.Command {
 		Use:   "rollback",
 		Short: "Roll an environment back to its previous pin set",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := guardServe(cmd); err != nil {
+			release, err := acquireServeLock(cmd)
+			if err != nil {
 				return err
 			}
+			defer release()
 			d, err := buildDeps(cmd, envName, false, !dryRun)
 			if err != nil {
 				return err

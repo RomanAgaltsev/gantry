@@ -32,14 +32,24 @@ func lockPath(repoOrConfig string) string {
 	return filepath.Join(dir, ".gantry", "serve.lock")
 }
 
-// guardServe returns an error when a fresh daemon lock holds the repo, so the mutating CLI
-// verbs refuse to run concurrently with `gantry serve` (C3-D4).
-func guardServe(cmd *cobra.Command) error {
+// acquireServeLock takes the single-writer serve lock so a mutating CLI verb cannot run
+// concurrently with `gantry serve` or another mutating verb (C6 — verbs now Acquire the
+// same lock the daemon does, rather than merely peeking with CheckFree). The returned
+// release func drops the lock and must be deferred by the caller.
+func acquireServeLock(cmd *cobra.Command) (func(), error) {
 	path, err := cmd.Flags().GetString("config")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return daemon.CheckFree(lockPath(path))
+	lp := lockPath(path)
+	if err := os.MkdirAll(filepath.Dir(lp), 0o750); err != nil {
+		return nil, err
+	}
+	lock, err := daemon.Acquire(lp)
+	if err != nil {
+		return nil, err
+	}
+	return func() { _ = lock.Release() }, nil //nolint:gosec // best-effort lock release
 }
 
 // resolveInterval picks the daemon interval: the --interval flag when set (parsed with the
