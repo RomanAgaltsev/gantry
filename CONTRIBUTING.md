@@ -3,6 +3,11 @@
 Thanks for contributing! gantry is a single-module Go CLI
 (`github.com/RomanAgaltsev/gantry`) — a non-Kubernetes release orchestrator.
 
+> For a deep dive into the architecture, the core interfaces, how to add a forge / executor /
+> verifier / notifier / secret backend, the testing strategy, and forking guidance, read the
+> **[Developer & Contributor Guide](docs/developer-guide.md)**. This file is the quickstart;
+> that guide is the full reference.
+
 ## Prerequisites
 
 - Go 1.26+
