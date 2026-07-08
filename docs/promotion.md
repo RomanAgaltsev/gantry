@@ -46,6 +46,22 @@ defaults `false`, so an environment without verification keeps the green-only be
 
 Promotion is wholesale — the full set that was green together moves in one commit.
 
+## Diff (compare two environments)
+
+`diff` shows the pin differences between two environments right now — useful before a
+promotion or when investigating drift between `test` and `prod`:
+
+```bash
+gantry diff --env test --to prod
+```
+
+Only the pins that differ are listed (absent pins render as `-`). Pass `--output json`
+for a machine-readable `{key, a, b}` array:
+
+```bash
+gantry diff --env test --to prod --output json
+```
+
 ## Rollback
 
 `rollback` restores an environment to its **last known-good** set — the most recent
