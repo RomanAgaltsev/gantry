@@ -109,16 +109,9 @@ func runServe(cmd *cobra.Command, interval string) error {
 	obs, metricsHandler := daemon.NewPrometheusObserver(Version)
 	deps.Metrics = obs
 
-	var bell <-chan struct{}
-	var bellMount doorbellMount
-	if cfg.Daemon.Doorbell.Enabled {
-		secret, err := res.Resolve(cmd.Context(), cfg.Daemon.Doorbell.Secret)
-		if err != nil {
-			return err
-		}
-		handler, ch := daemon.NewDoorbell(secret, cfg.Daemon.Doorbell.HMAC)
-		bell, bellMount = ch, doorbellMount{Path: cfg.Daemon.Doorbell.Path, Handler: handler}
-		logging.From(cmd.Context()).Info("doorbell enabled", "path", cfg.Daemon.Doorbell.Path)
+	bell, bellMount, err := buildDoorbell(cmd.Context(), res, cfg)
+	if err != nil {
+		return err
 	}
 
 	if err := os.MkdirAll(filepath.Dir(lockPath(path)), 0o750); err != nil {
@@ -135,25 +128,82 @@ func runServe(cmd *cobra.Command, interval string) error {
 		return err
 	}
 
-	srv := &http.Server{
-		Addr:              cfg.Daemon.Listen,
-		Handler:           buildServeMux(metricsHandler, bellMount),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logging.From(cmd.Context()).Error("http server stopped", "error", err)
-		}
-	}()
+	// The HTTP server + mux and the metrics registry are built once and reused across reloads
+	// so /metrics continuity holds and the listen address does not flap.
+	srv := startServeHTTP(cmd.Context(), cfg.Daemon.Listen, buildServeMux(metricsHandler, bellMount))
+
+	// SIGHUP reloads the config without dropping the single-writer lock: the current loop is
+	// cancelled and restarted with freshly-built deps (review §9 item 9). SIGINT/SIGTERM stop.
+	reload := make(chan os.Signal, 1)
+	signal.Notify(reload, syscall.SIGHUP)
+	defer signal.Stop(reload)
 
 	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	err = daemon.Run(ctx, *deps, daemon.Options{Interval: ivl, Doorbell: bell})
+
+	var loopErr error
+	for {
+		runCtx, cancelRun := context.WithCancel(ctx)
+		go func() {
+			select {
+			case <-reload:
+				logging.From(ctx).Info("SIGHUP: reloading config")
+				cancelRun() // stop the current loop; the outer for rebuilds deps
+			case <-ctx.Done():
+				cancelRun()
+			}
+		}()
+		loopErr = daemon.Run(runCtx, *deps, daemon.Options{Interval: ivl, Doorbell: bell})
+		if ctx.Err() != nil {
+			break // real shutdown (SIGINT/SIGTERM)
+		}
+		// Reload: rebuild deps from disk; a parse/wiring error keeps the previous deps and logs.
+		deps, ivl = applyReload(ctx, path, res, interval, deps, ivl)
+	}
 
 	shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutCtx) //nolint:gosec // best-effort shutdown; the loop result is what matters
-	return err
+	if loopErr != nil && !errors.Is(loopErr, context.Canceled) {
+		return loopErr
+	}
+	return nil
+}
+
+// applyReload rebuilds the daemon deps from disk for a SIGHUP reload and returns the new deps
+// and interval. On any failure (parse/wiring/invalid interval) it logs and returns the
+// previous deps and interval unchanged, so a bad edit never takes down a running daemon.
+func applyReload(ctx context.Context, path string, res config.SecretResolver, interval string, prev *daemon.Deps, prevIvl time.Duration) (*daemon.Deps, time.Duration) {
+	nd, cfg, err := reloadDeps(ctx, path, res)
+	if err != nil {
+		logging.From(ctx).Error("reload failed; keeping previous config", "error", err)
+		return prev, prevIvl
+	}
+	nd.Metrics = prev.Metrics // keep the same registry so /metrics continuity holds
+	ivl := prevIvl
+	if newIvl, err := resolveInterval(interval, cfg.Daemon.Interval.Duration()); err != nil {
+		logging.From(ctx).Error("reload interval invalid; keeping previous interval", "error", err)
+	} else {
+		ivl = newIvl
+	}
+	return nd, ivl
+}
+
+// reloadDeps loads the config from path and rebuilds the daemon deps, resolving the ambient
+// Vault defaults onto res so ${vault:…} refs work after a reload. It returns the new deps and
+// config, or an error so the caller can keep the previous deps (a parse or wiring failure
+// must never take down a running daemon).
+func reloadDeps(ctx context.Context, path string, res config.SecretResolver) (*daemon.Deps, *config.Config, error) {
+	cfg, err := config.Load(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	resolveVaultDefaults(ctx, &res, cfg)
+	deps, err := serveDeps(ctx, cfg, path, res)
+	if err != nil {
+		return nil, nil, err
+	}
+	return deps, cfg, nil
 }
 
 // serveDeps builds the daemon's long-lived collaborators from config: the forge client, the
@@ -211,11 +261,43 @@ func serveDeps(ctx context.Context, cfg *config.Config, path string, res config.
 	}, nil
 }
 
+// buildDoorbell constructs the doorbell trigger channel and its HTTP mount from config. When
+// the doorbell is disabled it returns a nil channel and an empty mount (mounts nothing). The
+// doorbell is built once at startup and reused across SIGHUP reloads with the HTTP mux.
+func buildDoorbell(ctx context.Context, res config.SecretResolver, cfg *config.Config) (<-chan struct{}, doorbellMount, error) {
+	if !cfg.Daemon.Doorbell.Enabled {
+		return nil, doorbellMount{}, nil
+	}
+	secret, err := res.Resolve(ctx, cfg.Daemon.Doorbell.Secret)
+	if err != nil {
+		return nil, doorbellMount{}, err
+	}
+	handler, ch := daemon.NewDoorbell(secret, cfg.Daemon.Doorbell.HMAC)
+	logging.From(ctx).Info("doorbell enabled", "path", cfg.Daemon.Doorbell.Path)
+	return ch, doorbellMount{Path: cfg.Daemon.Doorbell.Path, Handler: handler}, nil
+}
+
 // doorbellMount binds a doorbell handler to the path it is served at. A zero value (empty
 // Path) mounts nothing, so callers without a doorbell pass doorbellMount{}.
 type doorbellMount struct {
 	Path    string
 	Handler http.Handler
+}
+
+// startServeHTTP builds the daemon HTTP server and serves it in a background goroutine. A
+// non-ErrServerClosed error is logged; the returned server is Shutdown by the caller on exit.
+func startServeHTTP(ctx context.Context, addr string, handler *http.ServeMux) *http.Server {
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logging.From(ctx).Error("http server stopped", "error", err)
+		}
+	}()
+	return srv
 }
 
 // buildServeMux builds the HTTP mux for the daemon. /healthz is always registered; /metrics is
