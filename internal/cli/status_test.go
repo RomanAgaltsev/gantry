@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +14,32 @@ import (
 	"github.com/RomanAgaltsev/gantry/internal/forge"
 	"github.com/RomanAgaltsev/gantry/internal/pin"
 )
+
+// syncBuffer is a bytes.Buffer guarded by a mutex so a command running in one goroutine can
+// write to it while the test goroutine polls its length/contents — bytes.Buffer alone is not
+// safe for concurrent access (see TestStatusCmd_WatchRendersUntilCancelled).
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) Len() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Len()
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 type statusFakeForge struct{}
 
@@ -162,7 +189,7 @@ environments:
 
 	path := writeTempRepo(t, cfgYAML)
 	ctx, cancel := context.WithCancel(context.Background())
-	var out bytes.Buffer
+	var out syncBuffer
 	cmd := NewRootCmd()
 	cmd.SetOut(&out)
 	cmd.SetErr(&bytes.Buffer{})
