@@ -98,7 +98,20 @@ export GANTRY_FORGE_TOKEN=glpat-xxxxxxxxxxxxxxxxxxxx
 
 The token needs read access to the project's releases (GitLab `read_api` scope).
 
-## 4. Plan (read-only)
+## 4. Validate (read-only)
+
+Before the first deploy, check the config end to end — schema, that every referenced
+secret resolves (e.g. the `${env:…}` and `${file:…}` refs), and that the pin files agree
+with the declared components (no orphan or missing pins):
+
+```bash
+./gantry validate --config gantry.yaml
+```
+
+On success it prints `config valid`; unresolved secrets or schema errors fail non-zero.
+Orphan/missing pins are reported as warnings (they do not fail validation).
+
+## 5. Plan (read-only)
 
 `plan` shows the pin changes a `sync` would make, without writing or deploying:
 
@@ -115,7 +128,7 @@ API_IMAGE: reg/api:v1.3.0 -> reg/api:v1.4.0
 If everything is already pinned to the latest release, it prints `up to date; no
 changes`.
 
-## 5. Sync (pin + deploy)
+## 6. Sync (pin + deploy)
 
 `sync` resolves the latest releases, and if the pins differ from what is currently
 recorded it:
@@ -142,7 +155,7 @@ If nothing changed, `sync` is a no-op: no commit, no deploy.
 > committed pin file (gantry's `sync` error tells you this too). See
 > [Recovering a `sync` whose deploy failed](configuration.md#recovering-a-sync-whose-deploy-failed).
 
-## 6. Promoting to prod
+## 7. Promoting to prod
 
 Once `sync` has a green deploy on `test`, promote that exact set to `prod` and roll back
 if needed. See [promotion.md](promotion.md):
@@ -151,7 +164,7 @@ if needed. See [promotion.md](promotion.md):
     gantry rollback --env prod
     gantry history --env prod
 
-## 7. Status
+## 8. Status
 
 `status` compares the currently pinned image of each component against the latest
 release available on the forge, without changing anything:
@@ -163,6 +176,31 @@ release available on the forge, without changing anything:
 ```
 API_IMAGE            pinned=reg/api:v1.3.0          latest=reg/api:v1.4.0
 ```
+
+### Machine-readable output (`--output json`)
+
+The read verbs — `status`, `history`, `drift`, and `plan` — accept the global
+`--output json` (short `-o json`) flag. On JSON output they write only a JSON
+document to stdout (all diagnostics go to stderr), so scripts and automation can
+parse the result without scraping fixed-width text:
+
+```bash
+./gantry history --env prod --output json --config gantry.yaml
+./gantry status --all -o json
+```
+
+### Live status (`--watch`)
+
+Add `--watch` to refresh the cross-environment matrix on an interval until you press
+Ctrl-C, a lightweight live view with no extra dependencies:
+
+```bash
+./gantry status --all --watch --interval 5s
+```
+
+One refresh failing (e.g. a transient forge blip) is printed to stderr and retried on
+the next tick, so the view keeps running during an incident. `--watch` is not available
+with `--output json`.
 
 ## Next steps
 

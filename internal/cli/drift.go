@@ -44,6 +44,7 @@ func newDriftCmd() *cobra.Command {
 				return nil
 			}
 			drifted := false
+			var items []engine.DriftItem
 			for _, e := range envs {
 				d, err := buildDeps(cmd, e, true, false)
 				if err != nil {
@@ -53,9 +54,15 @@ func newDriftCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				printDriftReport(cmd, rep, d.cfg.Drift.ThresholdOrDefault())
+				items = append(items, rep.Items...)
+				if !outputIsJSON(cmd) {
+					printDriftReport(cmd, rep, d.cfg.Drift.ThresholdOrDefault())
+				}
 				d.notifier.Dispatch(cmd.Context(), driftEvents(rep)...)
 				drifted = drifted || rep.Drifted()
+			}
+			if outputIsJSON(cmd) {
+				return printJSON(cmd, items)
 			}
 			if !drifted {
 				cmd.Println("no drift")

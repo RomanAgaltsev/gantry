@@ -33,6 +33,16 @@ gantry promote --from test --to prod --sha <c>  # promotes a specific commit (mu
 gantry promote --from test --to prod --dry-run  # show what would happen
 ```
 
+`--only` promotes a subset of the pins (e.g. a single component) rather than the whole
+set; the unlisted pins carry forward from `prod`'s current file unchanged:
+
+```bash
+gantry promote --from test --to prod --only SVC_IMAGE
+```
+
+A subset was never validated together as a unit, so gantry prints a warning when you use
+`--only`. Use it for targeted advancement, not as a replacement for the wholesale default.
+
 The set is a **frozen snapshot**: gantry never promotes "the current upstream pin," only
 the file as committed at the chosen SHA, so a poller advancing `test` after your decision
 cannot leak an unvalidated set into `prod`. Promotion is **gated**: gantry refuses a SHA
@@ -46,6 +56,22 @@ defaults `false`, so an environment without verification keeps the green-only be
 
 Promotion is wholesale — the full set that was green together moves in one commit.
 
+## Diff (compare two environments)
+
+`diff` shows the pin differences between two environments right now — useful before a
+promotion or when investigating drift between `test` and `prod`:
+
+```bash
+gantry diff --env test --to prod
+```
+
+Only the pins that differ are listed (absent pins render as `-`). Pass `--output json`
+for a machine-readable `{key, a, b}` array:
+
+```bash
+gantry diff --env test --to prod --output json
+```
+
 ## Rollback
 
 `rollback` restores an environment to its **last known-good** set — the most recent
@@ -55,6 +81,18 @@ Promotion is wholesale — the full set that was green together moves in one com
 gantry rollback --env prod
 gantry rollback --env prod --dry-run
 ```
+
+For a symlink-release environment, `--fast` skips the full redeploy and instead flips
+`current` back to the previous release directory (still on disk) and runs `compose up -d`
+without pulling — a near-instant revert:
+
+```bash
+gantry rollback --env prod --fast
+```
+
+`--fast` only works on symlink-release environments; other executors error rather than
+silently doing a slow redeploy. Like a blue-green slot flip, a fast rollback is recorded
+as healthy=unknown (a pointer flip does not re-verify service health).
 
 Because the target comes from the ledger (not the literal parent commit), rollback never
 redeploys a set the ledger recorded as `failed`, and running it again walks further back

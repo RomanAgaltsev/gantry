@@ -3,6 +3,8 @@ package config
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -159,6 +161,61 @@ func TestResolveVault_MissingFieldErrors(t *testing.T) {
 	}
 	_, err := r.Resolve(context.Background(), SecretRef{Raw: "${vault:secret/gantry#forge_token}"})
 	require.ErrorContains(t, err, "forge_token")
+}
+
+// TestResolveVaultHTTP stands up a fake Vault KV v2 HTTP server and resolves a field via the
+// native vault-http scheme (no vault binary) — the container-friendly backend (review §9.13).
+func TestResolveVaultHTTP(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/v1/secret/data/app", r.URL.Path)
+		require.Equal(t, "tok", r.Header.Get("X-Vault-Token"))
+		_, _ = w.Write([]byte(`{"data":{"data":{"password":"s3cr3t"}}}`))
+	}))
+	defer srv.Close()
+
+	r := DefaultResolver()
+	r.Vault = VaultDefaults{Address: srv.URL, Token: "tok"}
+	v, err := r.Resolve(context.Background(), SecretRef{Raw: "${vault-http:secret/data/app#password}"})
+	require.NoError(t, err)
+	require.Equal(t, "s3cr3t", v)
+}
+
+func TestResolveVaultHTTP_MissingFieldErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"data":{"other":"x"}}}`))
+	}))
+	defer srv.Close()
+
+	r := DefaultResolver()
+	r.Vault = VaultDefaults{Address: srv.URL, Token: "tok"}
+	_, err := r.Resolve(context.Background(), SecretRef{Raw: "${vault-http:secret/data/app#password}"})
+	require.ErrorContains(t, err, "password")
+}
+
+func TestResolveVaultHTTP_NoAddressErrors(t *testing.T) {
+	r := DefaultResolver() // no Vault.Address
+	_, err := r.Resolve(context.Background(), SecretRef{Raw: "${vault-http:secret/data/app#password}"})
+	require.ErrorContains(t, err, "no vault address")
+}
+
+func TestResolveVaultHTTP_NonOKErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("permission denied"))
+	}))
+	defer srv.Close()
+
+	r := DefaultResolver()
+	r.Vault = VaultDefaults{Address: srv.URL, Token: "bad"}
+	_, err := r.Resolve(context.Background(), SecretRef{Raw: "${vault-http:secret/data/app#password}"})
+	require.ErrorContains(t, err, "403")
+}
+
+func TestResolveVaultHTTP_MissingHashErrors(t *testing.T) {
+	r := DefaultResolver()
+	r.Vault = VaultDefaults{Address: "https://vault.example:8200"}
+	_, err := r.Resolve(context.Background(), SecretRef{Raw: "${vault-http:secret/data/app}"})
+	require.ErrorContains(t, err, "path#field")
 }
 
 func TestResolver_SchemesArePerInstance(t *testing.T) {

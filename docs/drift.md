@@ -27,6 +27,22 @@ drift:
   threshold: 7d   # default 7d; accepts d/h/m (e.g. 72h, 14d)
 ```
 
+### Per-component thresholds
+
+A component can override the global `drift.threshold` with its own
+`drift_threshold`, so a slow-moving component (or one you deliberately lag) can
+tolerate more or less lag than the rest:
+
+```yaml
+components:
+  - id: api
+    project: demo/api
+    pin_key: API_IMAGE
+    drift_threshold: 1d   # this one tolerates only 1 day (overrides the 7d global)
+```
+
+A component without `drift_threshold` uses the global value.
+
 ## Usage
 
 ```bash

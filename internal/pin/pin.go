@@ -50,7 +50,11 @@ func Render(s Set) []byte {
 }
 
 // Change is a single pin difference.
-type Change struct{ Key, Old, New string }
+type Change struct {
+	Key string `json:"key"`
+	Old string `json:"old"`
+	New string `json:"new"`
+}
 
 // Diff returns additions and changes from current to desired, sorted by key.
 func Diff(current, desired Set) []Change {

@@ -130,3 +130,35 @@ func TestPromote_DryRun(t *testing.T) {
 	require.Nil(t, store.committed)
 	require.Len(t, led.entries, 1) // the seeded gate entry only; DryRun must not record
 }
+
+// TestPromote_OnlySubset promotes just the listed pin keys, carrying the target's other
+// pins forward unchanged. The subset was never validated together as a unit (review §9.5).
+func TestPromote_OnlySubset(t *testing.T) {
+	store := &fakeStore{
+		cur:   pin.Set{"A_IMAGE": "reg/a:v1", "B_IMAGE": "reg/b:v1"}, // prod current
+		atSHA: map[string]pin.Set{"g1": {"A_IMAGE": "reg/a:v2", "B_IMAGE": "reg/b:v2"}},
+	}
+	ex := &fakeExec{}
+	led := &fakeLedger{entries: []ledger.Entry{{Environment: "test", PinCommit: "g1", Result: "ok"}}}
+
+	res, err := (&Engine{Cfg: promoteCfg(), Store: store, Ledger: led}).Promote(
+		context.Background(), "test", "prod", "", ex, nil, PromoteOptions{Only: []string{"A_IMAGE"}})
+	require.NoError(t, err)
+	require.True(t, res.Deployed)
+	// Only A advanced to v2; B carried forward from prod's current v1.
+	require.Equal(t, pin.Set{"A_IMAGE": "reg/a:v2", "B_IMAGE": "reg/b:v1"}, store.committed)
+}
+
+// TestPromote_OnlyMissingKeyErrors refuses an --only key the source does not pin, rather
+// than silently promoting nothing for it.
+func TestPromote_OnlyMissingKeyErrors(t *testing.T) {
+	store := &fakeStore{
+		cur:   pin.Set{"A_IMAGE": "reg/a:v1"},
+		atSHA: map[string]pin.Set{"g1": {"A_IMAGE": "reg/a:v2"}},
+	}
+	led := &fakeLedger{entries: []ledger.Entry{{Environment: "test", PinCommit: "g1", Result: "ok"}}}
+
+	_, err := (&Engine{Cfg: promoteCfg(), Store: store, Ledger: led}).Promote(
+		context.Background(), "test", "prod", "", &fakeExec{}, nil, PromoteOptions{Only: []string{"NOPE"}})
+	require.ErrorContains(t, err, "not present in the promoted pin set")
+}

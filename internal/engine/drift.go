@@ -14,13 +14,13 @@ var timeNow = time.Now
 // DriftItem is one tracked component whose latest release is newer than its pin and
 // has been published longer than the threshold.
 type DriftItem struct {
-	Env       string
-	Component string
-	PinKey    string
-	PinnedRef string // current pin ("" if never pinned)
-	LatestRef string // latest release's ImageRef
-	Latest    forge.Release
-	Age       time.Duration // now − Latest.BuiltAt
+	Env       string        `json:"env"`
+	Component string        `json:"component"`
+	PinKey    string        `json:"pin_key"`
+	PinnedRef string        `json:"pinned_ref"` // current pin ("" if never pinned)
+	LatestRef string        `json:"latest_ref"` // latest release's ImageRef
+	Latest    forge.Release `json:"latest"`
+	Age       time.Duration `json:"age"` // now − Latest.BuiltAt
 }
 
 // DriftReport lists every drifted component for an environment.
@@ -44,13 +44,17 @@ func (e *Engine) Drift(ctx context.Context, envName string) (DriftReport, error)
 	if err != nil {
 		return DriftReport{}, err
 	}
-	threshold := e.Cfg.Drift.ThresholdOrDefault()
+	globalThreshold := e.Cfg.Drift.ThresholdOrDefault()
 	now := timeNow()
 
 	var rep DriftReport
 	for _, comp := range e.Cfg.Components {
 		if comp.IsExplicit() {
 			continue // explicit pins have no gantry-known "latest" (B4-D3)
+		}
+		threshold := globalThreshold
+		if comp.DriftThreshold != 0 {
+			threshold = comp.DriftThreshold.Duration() // per-component override (§9.12)
 		}
 		rel, err := e.Forge.LatestRelease(ctx, forge.Component{ID: comp.ID, Project: comp.Project, PinKey: comp.PinKey})
 		if err != nil {

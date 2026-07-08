@@ -15,14 +15,14 @@ type Component struct {
 
 // Release is the consumed, parsed form of a component's published release.
 type Release struct {
-	Component        string
-	SemverVersion    string
-	ImageRepository  string
-	ImageTag         string
-	ImageDigest      string
-	CommitSHA        string
-	ChangelogSection string
-	BuiltAt          time.Time
+	Component        string    `json:"component"`
+	SemverVersion    string    `json:"semver_version"`
+	ImageRepository  string    `json:"image_repository"`
+	ImageTag         string    `json:"image_tag"`
+	ImageDigest      string    `json:"image_digest"`
+	CommitSHA        string    `json:"commit_sha"`
+	ChangelogSection string    `json:"changelog_section"`
+	BuiltAt          time.Time `json:"built_at"`
 }
 
 // ImageRef is the immutable reference an environment pins. When the release

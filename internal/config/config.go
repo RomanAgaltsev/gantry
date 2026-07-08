@@ -108,6 +108,9 @@ type Component struct {
 	Project string          `yaml:"project"`
 	PinKey  string          `yaml:"pin_key"`
 	Source  ComponentSource `yaml:"source"`
+	// DriftThreshold overrides drift.threshold for this component only; zero falls back to the
+	// global drift.threshold. Lets a slow-moving component tolerate more lag than the rest.
+	DriftThreshold Duration `yaml:"drift_threshold"`
 }
 
 // IsExplicit reports whether the component's pin is maintained in the pin file.

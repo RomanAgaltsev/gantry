@@ -105,3 +105,22 @@ func TestDrift(t *testing.T) {
 		require.Contains(t, err.Error(), "track-mode")
 	})
 }
+
+// TestDrift_PerComponentThreshold checks that a component's own drift_threshold overrides
+// the global one: a 3-day-old release is within the 7d global threshold but past the
+// component's 1d threshold, so it drifts (review §9.12).
+func TestDrift_PerComponentThreshold(t *testing.T) {
+	fixedNow := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	timeNow = func() time.Time { return fixedNow }
+	t.Cleanup(func() { timeNow = time.Now })
+
+	age3d := fixedNow.Add(-3 * 24 * time.Hour)
+	cfg := driftCfg(config.Duration(7*24*time.Hour),
+		config.Component{ID: "api", Project: "demo/api", PinKey: "API_IMAGE", DriftThreshold: config.Duration(24 * time.Hour)})
+	store := &fakeStore{cur: pin.Set{"API_IMAGE": "reg/api:v1"}}
+	f := driftForge{byID: map[string]forge.Release{"api": rel("reg/api", "v2", age3d)}}
+
+	rep, err := (&Engine{Cfg: cfg, Forge: f, Store: store}).Drift(context.Background(), "test")
+	require.NoError(t, err)
+	require.True(t, rep.Drifted())
+}

@@ -25,23 +25,23 @@ const statusFetchConcurrency = 8
 
 // EnvHealth is one environment's most recent deploy outcome from the ledger.
 type EnvHealth struct {
-	Env     string
-	Result  string        // ledger Result ("ok"|"failed"); "" when HasData is false
-	Healthy string        // ledger Healthy ("true"|"false"|"unknown"); "" when HasData is false
-	Age     time.Duration // now − newest entry's DeployedAt; 0 when HasData is false
-	HasData bool          // false when the environment has no ledger history yet
+	Env     string        `json:"env"`
+	Result  string        `json:"result"`   // ledger Result ("ok"|"failed"); "" when HasData is false
+	Healthy string        `json:"healthy"`  // ledger Healthy ("true"|"false"|"unknown"); "" when HasData is false
+	Age     time.Duration `json:"age"`      // now − newest entry's DeployedAt; 0 when HasData is false
+	HasData bool          `json:"has_data"` // false when the environment has no ledger history yet
 }
 
 // Matrix is the cross-environment read model behind `gantry status --all`:
 // the latest release per component, each environment's pins, which cells lag
 // latest, and each environment's health. Computed live; nothing is stored.
 type Matrix struct {
-	Components   []string                     // pin keys, config order
-	Environments []string                     // env names, config order
-	Latest       map[string]string            // pinKey -> latest ref or "(untracked)"
-	Pins         map[string]map[string]string // env -> pinKey -> pinned ref ("" if absent)
-	Drift        map[string]map[string]bool   // env -> pinKey -> pin lags latest (tracked only)
-	Health       []EnvHealth                  // per environment, Environments order
+	Components   []string                     `json:"components"`   // pin keys, config order
+	Environments []string                     `json:"environments"` // env names, config order
+	Latest       map[string]string            `json:"latest"`       // pinKey -> latest ref or "(untracked)"
+	Pins         map[string]map[string]string `json:"pins"`         // env -> pinKey -> pinned ref ("" if absent)
+	Drift        map[string]map[string]bool   `json:"drift"`        // env -> pinKey -> pin lags latest (tracked only)
+	Health       []EnvHealth                  `json:"health"`       // per environment, Environments order
 }
 
 // StatusMatrix builds the status matrix. It fetches each component's latest

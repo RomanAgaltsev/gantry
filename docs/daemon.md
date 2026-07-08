@@ -129,6 +129,20 @@ HTTP server is given 5s to drain, and the lock is released. In-flight reconcile 
 bounded by `daemon.reconcile_timeout`; a stuck host fails that environment's reconcile after
 the timeout rather than wedging the loop, and `/healthz` keeps answering `ok` throughout.
 
+### Reloading config with `SIGHUP`
+
+Send `SIGHUP` to reload `gantry.yaml` without restarting the process or dropping the
+single-writer lock — useful when you add an environment or tweak `daemon.interval`:
+
+```bash
+kill -HUP $(pidof gantry)
+```
+
+The current reconcile loop is cancelled and restarted with freshly-loaded config; the HTTP
+server, the metrics registry, and the lock stay up across reloads, so `/metrics` continuity
+holds. If the reloaded config fails to parse or wire up, the daemon logs the error and keeps
+running the previous config — a bad edit never takes the daemon down.
+
 ## Exposure & TLS
 
 By default the daemon binds `127.0.0.1:9713` — only the orchestrator host can reach it
