@@ -95,6 +95,15 @@ operational error.
 
 ## Documentation
 
+**Start here** — comprehensive, self-contained guides:
+
+- **[Administrator & Operator Guide](docs/admin-guide.md)** — end-to-end, from install through
+  the most advanced deployment topologies (for anyone running gantry).
+- **[Developer & Contributor Guide](docs/developer-guide.md)** — architecture, the pluggable
+  seams, testing, and conventions (for anyone contributing to or forking gantry).
+
+Focused reference pages:
+
 - [Getting started](docs/getting-started.md) · [Configuration reference](docs/configuration.md)
 - [Executors](docs/executors.md) · [Blue-green](docs/blue-green.md) · [Verification](docs/verification.md)
 - [Promotion](docs/promotion.md) · [Drift](docs/drift.md)
