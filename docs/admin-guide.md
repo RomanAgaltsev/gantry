@@ -586,7 +586,6 @@ Embed this in each release's description, delimited by the configured marker:
 
 ```
 <!-- gantry-release-metadata:v1:start -->
-```json
 {
   "schema_version": "1",
   "component": "api",
@@ -598,7 +597,6 @@ Embed this in each release's description, delimited by the configured marker:
   "built_at": "2026-06-18T10:00:00Z",
   "changelog_section": "### Added\n- ..."
 }
-```
 <!-- gantry-release-metadata:v1:end -->
 ```
 
