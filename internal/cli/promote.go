@@ -9,6 +9,7 @@ import (
 func newPromoteCmd() *cobra.Command {
 	var fromEnv, toEnv, sha string
 	var dryRun bool
+	var only []string
 	cmd := &cobra.Command{
 		Use:   "promote",
 		Short: "Promote a verified pin set from one environment to another",
@@ -27,7 +28,10 @@ func newPromoteCmd() *cobra.Command {
 					cmd.PrintErrln(w)
 				}
 			}
-			res, err := d.engine.Promote(cmd.Context(), fromEnv, toEnv, sha, d.exec, d.verify, engine.PromoteOptions{DryRun: dryRun})
+			if len(only) > 0 {
+				cmd.PrintErrln("warning: --only promotes a subset that was never validated together as a unit")
+			}
+			res, err := d.engine.Promote(cmd.Context(), fromEnv, toEnv, sha, d.exec, d.verify, engine.PromoteOptions{DryRun: dryRun, Only: only})
 			d.notifier.Dispatch(cmd.Context(), promoteEvents(fromEnv, toEnv, res, err)...)
 			if err != nil {
 				if note := autoRollbackNote(toEnv, res.RolledBackTo); note != "" {
@@ -49,6 +53,7 @@ func newPromoteCmd() *cobra.Command {
 	cmd.Flags().StringVar(&toEnv, "to", "", "target environment")
 	cmd.Flags().StringVar(&sha, "sha", "", "source pin commit (default: latest green)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would be promoted without acting")
+	cmd.Flags().StringSliceVar(&only, "only", nil, "promote only these pin keys (subset; not validated as a unit)")
 	mustRequireFlag(cmd, "from")
 	mustRequireFlag(cmd, "to")
 	return cmd

@@ -344,7 +344,13 @@ func (e *Engine) writePins(ctx context.Context, pinFile string, pins pin.Set, ms
 }
 
 // PromoteOptions tunes a Promote run.
-type PromoteOptions struct{ DryRun bool }
+type PromoteOptions struct {
+	DryRun bool
+	// Only, when non-empty, promotes just these pin keys (a subset) instead of the whole
+	// set, merged over the target's existing pins so unlisted pins carry forward unchanged.
+	// A subset was never validated together as a unit, so the CLI prints a warning.
+	Only []string
+}
 
 // PromoteResult reports what a Promote did.
 type PromoteResult struct {
@@ -373,42 +379,21 @@ func (e *Engine) Promote(ctx context.Context, fromEnv, toEnv, sha string, ex exe
 		return PromoteResult{}, fmt.Errorf("environment %q not found", toEnv)
 	}
 
-	if sha == "" {
-		var green ledger.Entry
-		var err error
-		if e.Cfg.Promote.RequireHealthy {
-			green, err = e.Ledger.LatestHealthy(ctx, fromEnv)
-		} else {
-			green, err = e.Ledger.LatestGreen(ctx, fromEnv)
-		}
-		if err != nil {
-			return PromoteResult{}, fmt.Errorf("no %s deploy of %q to promote: %w", greenWord(e.Cfg.Promote.RequireHealthy), fromEnv, err)
-		}
-		sha = green.PinCommit
-	} else {
-		full, err := e.Store.Resolve(ctx, sha)
-		if err != nil {
-			return PromoteResult{}, fmt.Errorf("resolve --sha %q: %w", sha, err)
-		}
-		sha = full
-		entry, ok, err := e.Ledger.Lookup(ctx, fromEnv, sha)
-		if err != nil {
-			return PromoteResult{}, err
-		}
-		if !ok {
-			return PromoteResult{}, fmt.Errorf("refusing to promote %q@%.7s: no deploy record (gate)", fromEnv, sha)
-		}
-		if entry.Result != ledger.ResultOK {
-			return PromoteResult{}, fmt.Errorf("refusing to promote %q@%.7s: last deploy was %q, not ok (gate)", fromEnv, sha, entry.Result)
-		}
-		if e.Cfg.Promote.RequireHealthy && entry.Healthy != ledger.HealthTrue {
-			return PromoteResult{}, fmt.Errorf("refusing to promote %q@%.7s: not verified healthy (gate)", fromEnv, sha)
-		}
+	sha, err := e.resolvePromoteSHA(ctx, fromEnv, sha)
+	if err != nil {
+		return PromoteResult{}, err
 	}
 
 	pins, err := e.Store.ReadAt(ctx, sha, from.PinFile)
 	if err != nil {
 		return PromoteResult{}, err
+	}
+	if len(opts.Only) > 0 {
+		subset, err := promoteSubset(ctx, e.Store, to.PinFile, pins, opts.Only)
+		if err != nil {
+			return PromoteResult{}, err
+		}
+		pins = subset
 	}
 	if len(pins) == 0 {
 		return PromoteResult{}, fmt.Errorf("pin set at %.7s is empty; nothing to promote", sha)
@@ -427,6 +412,72 @@ func (e *Engine) Promote(ctx context.Context, fromEnv, toEnv, sha string, ex exe
 		return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA, AutoRolledBack: rolledBackTo != "", RolledBackTo: rolledBackTo, VerifyFailed: verifyFailed}, err
 	}
 	return PromoteResult{FromSHA: sha, Pins: pins, Committed: newSHA, Deployed: true}, nil
+}
+
+// resolvePromoteSHA resolves the source commit to promote from. An empty sha selects the
+// latest green (or healthy, when require_healthy) deploy of fromEnv; an explicit sha is
+// gated — Promote refuses one whose (fromEnv, sha) ledger entry is missing or not ok.
+func (e *Engine) resolvePromoteSHA(ctx context.Context, fromEnv, sha string) (string, error) {
+	if sha == "" {
+		var green ledger.Entry
+		var err error
+		if e.Cfg.Promote.RequireHealthy {
+			green, err = e.Ledger.LatestHealthy(ctx, fromEnv)
+		} else {
+			green, err = e.Ledger.LatestGreen(ctx, fromEnv)
+		}
+		if err != nil {
+			return "", fmt.Errorf("no %s deploy of %q to promote: %w", greenWord(e.Cfg.Promote.RequireHealthy), fromEnv, err)
+		}
+		return green.PinCommit, nil
+	}
+	full, err := e.Store.Resolve(ctx, sha)
+	if err != nil {
+		return "", fmt.Errorf("resolve --sha %q: %w", sha, err)
+	}
+	entry, ok, err := e.Ledger.Lookup(ctx, fromEnv, full)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("refusing to promote %q@%.7s: no deploy record (gate)", fromEnv, full)
+	}
+	if entry.Result != ledger.ResultOK {
+		return "", fmt.Errorf("refusing to promote %q@%.7s: last deploy was %q, not ok (gate)", fromEnv, full, entry.Result)
+	}
+	if e.Cfg.Promote.RequireHealthy && entry.Healthy != ledger.HealthTrue {
+		return "", fmt.Errorf("refusing to promote %q@%.7s: not verified healthy (gate)", fromEnv, full)
+	}
+	return full, nil
+}
+
+// promoteSubset reduces pins to the keys in only, merged over the target's current pins
+// so unlisted pins carry forward unchanged. A key in only that is absent from the promoted
+// set is an error (the operator asked to promote something the source does not pin).
+func promoteSubset(ctx context.Context, store PinStore, targetPinFile string, pins pin.Set, only []string) (pin.Set, error) {
+	targetCur, err := store.Read(ctx, targetPinFile)
+	if err != nil {
+		return nil, err
+	}
+	wanted := make(map[string]bool, len(only))
+	for _, k := range only {
+		wanted[k] = true
+	}
+	for k := range wanted {
+		if _, ok := pins[k]; !ok {
+			return nil, fmt.Errorf("--only %q not present in the promoted pin set", k)
+		}
+	}
+	subset := make(pin.Set, len(targetCur)+len(wanted))
+	for k, v := range targetCur {
+		subset[k] = v // carry forward the target's unlisted pins
+	}
+	for k, v := range pins {
+		if wanted[k] {
+			subset[k] = v
+		}
+	}
+	return subset, nil
 }
 
 // greenWord labels the gate requirement for error messages.

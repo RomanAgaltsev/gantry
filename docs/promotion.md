@@ -33,6 +33,16 @@ gantry promote --from test --to prod --sha <c>  # promotes a specific commit (mu
 gantry promote --from test --to prod --dry-run  # show what would happen
 ```
 
+`--only` promotes a subset of the pins (e.g. a single component) rather than the whole
+set; the unlisted pins carry forward from `prod`'s current file unchanged:
+
+```bash
+gantry promote --from test --to prod --only SVC_IMAGE
+```
+
+A subset was never validated together as a unit, so gantry prints a warning when you use
+`--only`. Use it for targeted advancement, not as a replacement for the wholesale default.
+
 The set is a **frozen snapshot**: gantry never promotes "the current upstream pin," only
 the file as committed at the chosen SHA, so a poller advancing `test` after your decision
 cannot leak an unvalidated set into `prod`. Promotion is **gated**: gantry refuses a SHA
