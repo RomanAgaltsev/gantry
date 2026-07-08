@@ -164,6 +164,18 @@ release available on the forge, without changing anything:
 API_IMAGE            pinned=reg/api:v1.3.0          latest=reg/api:v1.4.0
 ```
 
+### Machine-readable output (`--output json`)
+
+The read verbs — `status`, `history`, `drift`, and `plan` — accept the global
+`--output json` (short `-o json`) flag. On JSON output they write only a JSON
+document to stdout (all diagnostics go to stderr), so scripts and automation can
+parse the result without scraping fixed-width text:
+
+```bash
+./gantry history --env prod --output json --config gantry.yaml
+./gantry status --all -o json
+```
+
 ## Next steps
 
 - Read the full [configuration reference](configuration.md).

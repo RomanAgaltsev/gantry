@@ -22,6 +22,9 @@ func newPlanCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if outputIsJSON(cmd) {
+				return printJSON(cmd, res.Changes)
+			}
 			printChanges(cmd, res.Changes, res.Deployed, res.Recovered)
 			if env, ok := d.cfg.Environment(d.env); ok {
 				current, rerr := d.engine.Store.Read(cmd.Context(), env.PinFile)

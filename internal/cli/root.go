@@ -32,6 +32,7 @@ func NewRootCmd() *cobra.Command {
 		},
 	}
 	root.PersistentFlags().String("config", "gantry.yaml", "path to gantry.yaml")
+	root.PersistentFlags().StringP("output", "o", "text", "output format: text|json")
 	root.PersistentFlags().String("log-format", "text", "log format: text|json")
 	root.PersistentFlags().String("log-level", "info", "log level: debug|info|warn|error")
 	root.AddCommand(

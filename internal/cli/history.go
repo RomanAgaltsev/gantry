@@ -18,6 +18,9 @@ func newHistoryCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if outputIsJSON(cmd) {
+				return printJSON(cmd, entries)
+			}
 			if len(entries) == 0 {
 				cmd.Printf("no deploy history for %s\n", envName)
 				return nil
