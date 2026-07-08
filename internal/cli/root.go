@@ -18,6 +18,9 @@ func NewRootCmd() *cobra.Command {
 		// It builds the logger from the persistent flags and injects it into the
 		// command context so the engine can emit diagnostics via logging.From(ctx).
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if err := validateOutput(cmd); err != nil {
+				return err
+			}
 			format, err := cmd.Flags().GetString("log-format")
 			if err != nil {
 				return err
@@ -32,7 +35,7 @@ func NewRootCmd() *cobra.Command {
 		},
 	}
 	root.PersistentFlags().String("config", "gantry.yaml", "path to gantry.yaml")
-	root.PersistentFlags().StringP("output", "o", "text", "output format: text|json")
+	root.PersistentFlags().StringP("output", "o", outputText, "output format: text|json")
 	root.PersistentFlags().String("log-format", "text", "log format: text|json")
 	root.PersistentFlags().String("log-level", "info", "log level: debug|info|warn|error")
 	root.AddCommand(

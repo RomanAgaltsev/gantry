@@ -35,6 +35,33 @@ func TestHistory_JSONOutput(t *testing.T) {
 	require.Equal(t, "ok", string(entries[0].Result))
 }
 
+// TestOutput_InvalidFormatIsRejected ensures an unknown --output value fails loudly rather
+// than silently falling back to text and handing a script malformed output (F2).
+func TestOutput_InvalidFormatIsRejected(t *testing.T) {
+	path := writeTempRepo(t, readOnlyConfig)
+
+	root := NewRootCmd()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"history", "--env", "test", "--output", "yaml", "--config", path})
+
+	err := root.Execute()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid --output")
+}
+
+// TestOutput_TextAndJSONAccepted confirms the two valid formats pass validation.
+func TestOutput_TextAndJSONAccepted(t *testing.T) {
+	path := writeTempRepo(t, readOnlyConfig)
+	for _, format := range []string{"text", "json"} {
+		root := NewRootCmd()
+		root.SetOut(&bytes.Buffer{})
+		root.SetErr(&bytes.Buffer{})
+		root.SetArgs([]string{"history", "--env", "test", "--output", format, "--config", path})
+		require.NoError(t, root.Execute(), "format %q must be accepted", format)
+	}
+}
+
 // TestHistory_JSONIsMachineClean ensures that on --output json, stdout is only JSON
 // (no human lines mixed in) — the global machine-clean constraint from the plan.
 func TestHistory_JSONIsMachineClean(t *testing.T) {
