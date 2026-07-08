@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -15,7 +16,8 @@ import (
 
 func newStatusCmd() *cobra.Command {
 	var envName string
-	var all bool
+	var all, watch bool
+	var interval time.Duration
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show current pins vs. latest releases (single env, or --all for the matrix)",
@@ -23,8 +25,18 @@ func newStatusCmd() *cobra.Command {
 			if all && envName != "" {
 				return errors.New("--all and --env are mutually exclusive")
 			}
+			if watch && outputIsJSON(cmd) {
+				return errors.New("--watch is incompatible with --output json")
+			}
+			// --watch defaults to the cross-environment matrix when neither --all nor --env is set.
+			if watch && !all && envName == "" {
+				all = true
+			}
 			if !all && envName == "" {
 				return errors.New("one of --env or --all is required")
+			}
+			if watch {
+				return runStatusWatch(cmd, all, envName, interval)
 			}
 			if all {
 				return runStatusAll(cmd)
@@ -34,6 +46,8 @@ func newStatusCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&envName, "env", "", "environment name")
 	cmd.Flags().BoolVar(&all, "all", false, "show the cross-environment matrix")
+	cmd.Flags().BoolVar(&watch, "watch", false, "refresh the status display until interrupted (Ctrl-C)")
+	cmd.Flags().DurationVar(&interval, "interval", 5*time.Second, "refresh interval for --watch")
 	return cmd
 }
 
@@ -76,6 +90,39 @@ func runStatusEnv(cmd *cobra.Command, envName string) error {
 		cmd.Println(componentStatusLine(cmd.Context(), comp, current, d.engine.Forge))
 	}
 	return nil
+}
+
+// clearScreen is the ANSI sequence used by --watch to reset the display before each
+// refresh (cursor home + erase entire screen).
+const clearScreen = "\033[H\033[2J"
+
+// runStatusWatch refreshes the status display on an interval until the command's context is
+// cancelled (Ctrl-C / signal). One refresh's error never exits the loop: it is printed to
+// stderr and the next tick retries, because the operator most needs a live view during an
+// incident where a refresh can transiently fail (review §9 item 18).
+func runStatusWatch(cmd *cobra.Command, all bool, envName string, interval time.Duration) error {
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		cmd.Print(clearScreen)
+		var err error
+		if all {
+			err = runStatusAll(cmd)
+		} else {
+			err = runStatusEnv(cmd, envName)
+		}
+		if err != nil {
+			cmd.PrintErrln(err)
+		}
+		select {
+		case <-cmd.Context().Done():
+			return nil
+		case <-t.C:
+		}
+	}
 }
 
 func componentStatusLine(ctx context.Context, comp config.Component, current pin.Set, f forge.Forge) string {

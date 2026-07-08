@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -111,4 +112,73 @@ func TestStatusCmd_RequiresEnvOrAll(t *testing.T) {
 	err := cmd.Execute()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "one of --env or --all")
+}
+
+func TestStatusCmd_WatchJSONIncompatible(t *testing.T) {
+	path := writeTempRepo(t, readOnlyConfig)
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"status", "--watch", "-o", "json", "--config", path})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "incompatible")
+}
+
+// TestStatusCmd_WatchRendersUntilCancelled drives one --watch refresh and cancels the
+// command context so the loop exits cleanly. The output must contain the matrix render.
+func TestStatusCmd_WatchRendersUntilCancelled(t *testing.T) {
+	prev := newForgeFunc
+	newForgeFunc = func(config.ForgeConfig, string) (forge.Forge, error) { return statusFakeForge{}, nil }
+	t.Cleanup(func() { newForgeFunc = prev })
+
+	t.Setenv("GANTRY_TEST_TOK", "tok")
+	const cfgYAML = `
+forge:
+  kind: gitlab
+  base_url: https://gitlab.example.com
+  token: ${env:GANTRY_TEST_TOK}
+connections:
+  app-host:
+    address: 10.0.0.1
+    ssh:
+      user: deploy
+      key: ${file:/does/not/exist}
+      known_hosts: ${file:/does/not/exist}
+components:
+  - { id: svc, project: g/svc, pin_key: SVC_IMAGE }
+environments:
+  - name: test
+    source: { track: latest }
+    pin_file: .env.versions.test
+    executor:
+      kind: compose-over-ssh
+      connection: app-host
+      project_dir: /opt/app
+      compose_files: [compose.yaml]
+      env_file: .env.versions.test
+`
+
+	path := writeTempRepo(t, cfgYAML)
+	ctx, cancel := context.WithCancel(context.Background())
+	var out bytes.Buffer
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"status", "--watch", "--interval", "1ms", "--config", path})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = cmd.Execute()
+	}()
+	// Let one refresh render, then cancel so the loop returns.
+	require.Eventually(t, func() bool { return out.Len() > 0 }, time.Second, time.Millisecond)
+	cancel()
+	<-done
+
+	require.Contains(t, out.String(), clearScreen)
+	require.Contains(t, out.String(), "reg/svc:v9") // one matrix render happened
 }

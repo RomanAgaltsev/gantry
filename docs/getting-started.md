@@ -176,6 +176,19 @@ parse the result without scraping fixed-width text:
 ./gantry status --all -o json
 ```
 
+### Live status (`--watch`)
+
+Add `--watch` to refresh the cross-environment matrix on an interval until you press
+Ctrl-C, a lightweight live view with no extra dependencies:
+
+```bash
+./gantry status --all --watch --interval 5s
+```
+
+One refresh failing (e.g. a transient forge blip) is printed to stderr and retried on
+the next tick, so the view keeps running during an incident. `--watch` is not available
+with `--output json`.
+
 ## Next steps
 
 - Read the full [configuration reference](configuration.md).
