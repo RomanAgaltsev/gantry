@@ -4,7 +4,7 @@ Every credential in `gantry.yaml` (the forge token, SSH key/known_hosts, registr
 user/password, SMTP password, doorbell secret) is a **SecretRef** — a `${scheme:arg}` string
 that gantry resolves at use time, never an inline literal. `${env:…}` and `${file:…}` are
 built in; `${cmd:…}`, `${sops:…}`, and `${vault:…}` shell out to host tools through an
-injectable runner.
+injectable runner; `${vault-http:…}` reads Vault over native HTTP with no binary.
 
 A missing secret is **always an error** — gantry never silently substitutes an empty string
 (a referenced-but-unset env var, a missing file, an unknown vault field all fail loudly,
@@ -18,7 +18,8 @@ close to the cause).
 | `file` | `${file:/path}` | file contents, trimmed |
 | `cmd` | `${cmd:prog a b}` | command stdout, trimmed (`prog` run with args `[a b]`) |
 | `sops` | `${sops:file.enc.yaml#db.password}` | a dotted key from a SOPS-decrypted file |
-| `vault` | `${vault:secret/gantry#field}` | a field from a Vault KV secret |
+| `vault` | `${vault:secret/gantry#field}` | a field from a Vault KV secret (shells out to the `vault` CLI) |
+| `vault-http` | `${vault-http:secret/data/gantry#field}` | a field from a Vault KV v2 secret over native HTTP (no `vault` binary) |
 
 Examples:
 
@@ -66,18 +67,39 @@ its environment (`VAULT_TOKEN`), not the process arg list.
 
 ## Binary-dependency caveat
 
-`env` and `file` are pure Go and work everywhere. `${cmd:…}`, `${sops:…}`, and `${vault:…}`
-shell out to the **`cmd`/`sops`/`vault` binaries on the host** — gantry does not vendor them.
-The default distroless runtime image ships only `env`/`file`/`cmd` (when the `cmd` binary
-exists), so to use `sops`/`vault` either run gantry in a fatter image with those CLIs
-installed or resolve those secrets in CI before invoking gantry. A runner call is bounded to
-30s so a hung tool cannot wedge a command or a daemon reconcile.
+`env`, `file`, and `vault-http` are pure Go and work everywhere (including the distroless
+image). `${cmd:…}`, `${sops:…}`, and `${vault:…}` shell out to the **`cmd`/`sops`/`vault`
+binaries on the host** — gantry does not vendor them. The default distroless runtime image
+ships only `env`/`file`/`cmd` (when the `cmd` binary exists), so to use `sops`/`vault` either
+run gantry in a fatter image with those CLIs installed, use the native `${vault-http:…}`
+backend instead (see below), or resolve those secrets in CI before invoking gantry. A runner
+call is bounded to 30s so a hung tool cannot wedge a command or a daemon reconcile.
+
+## Native Vault over HTTP (`vault-http`)
+
+`${vault-http:mount/data/path#field}` reads a single field from a Vault **KV v2** secret over
+HTTP — one `GET /v1/<path>` with `X-Vault-Token`, parsing `{"data":{"data":{"field":…}}}`.
+It needs no `vault` binary, so it is the container-friendly way to use Vault from the
+distroless image. The address and token come from the same `secrets.vault` block as `${vault:…}`:
+
+```yaml
+secrets:
+  vault:
+    address: ${env:VAULT_ADDR}
+    token:   ${env:VAULT_TOKEN}
+```
+
+Use `${vault:…}` when you have the CLI and want KV v1 or other Vault features; use
+`${vault-http:…}` for a dependency-free KV v2 read in a minimal image.
+
+> **Planned:** native `age`-encrypted-file support (`${age:/path#key}`) is on the roadmap —
+> it needs the `filippo.io/age` dependency and is not yet built.
 
 ## Extending it
 
-The built-in scheme set (`env`, `file`, `cmd`, `sops`, `vault`) is fixed and immutable.
-A resolver carries its own per-instance overrides via `WithScheme`, which returns a copy with
-the scheme added (no shared mutable state):
+The built-in scheme set (`env`, `file`, `cmd`, `sops`, `vault`, `vault-http`) is fixed and
+immutable. A resolver carries its own per-instance overrides via `WithScheme`, which returns
+a copy with the scheme added (no shared mutable state):
 
 ```go
 res := config.DefaultResolver().WithScheme("vaultlite", func(ctx context.Context, r config.SecretResolver, arg string) (string, error) {

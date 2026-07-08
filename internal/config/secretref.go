@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -176,6 +178,50 @@ func resolveVault(ctx context.Context, r SecretResolver, arg string) (string, er
 	return v, nil
 }
 
+// resolveVaultHTTP reads a field from a Vault KV v2 secret over HTTP (no vault binary), so
+// the distroless image can resolve Vault secrets without shelling out (review §9 item 13).
+// Arg form: "mount/data/path#field"; address and token come from the resolver's VaultDefaults.
+// KV v2 response shape: {"data":{"data":{"field":"value"}}}.
+func resolveVaultHTTP(ctx context.Context, r SecretResolver, arg string) (string, error) {
+	path, field, ok := strings.Cut(arg, "#")
+	if !ok {
+		return "", fmt.Errorf("vault-http secret %q: want path#field", arg)
+	}
+	if r.Vault.Address == "" {
+		return "", errors.New("vault-http: no vault address configured (secrets.vault.address)")
+	}
+	url := strings.TrimRight(r.Vault.Address, "/") + "/v1/" + strings.TrimLeft(path, "/")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("vault-http %q: %w", path, err)
+	}
+	if r.Vault.Token != "" {
+		req.Header.Set("X-Vault-Token", r.Vault.Token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("vault-http %q: %w", path, err)
+	}
+	defer func() { _ = resp.Body.Close() }() //nolint:gosec // best-effort close
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10)) //nolint:gosec // bounded error context
+		return "", fmt.Errorf("vault-http %q: %s: %s", path, resp.Status, body)
+	}
+	var out struct {
+		Data struct {
+			Data map[string]string `json:"data"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("vault-http %q: decode: %w", path, err)
+	}
+	v, ok := out.Data.Data[field]
+	if !ok {
+		return "", fmt.Errorf("vault-http %q: field %q not found", path, field)
+	}
+	return v, nil
+}
+
 // SchemeFunc resolves the arg of a ${scheme:arg} ref. ctx is the caller's context (a
 // shelling-out scheme must honor its cancellation); res is passed so a backend can compose
 // other schemes (e.g. vault resolving its own token) and so tests can inject fakes.
@@ -185,11 +231,12 @@ type SchemeFunc func(ctx context.Context, res SecretResolver, arg string) (strin
 // mutated (no Register), so there is no shared mutable state; per-resolver additions go
 // through WithScheme instead (review §2.2-D).
 var builtinSchemes = map[string]SchemeFunc{
-	"env":   resolveEnv,
-	"file":  resolveFile,
-	"cmd":   resolveCmd,
-	"sops":  resolveSOPS,
-	"vault": resolveVault,
+	"env":        resolveEnv,
+	"file":       resolveFile,
+	"cmd":        resolveCmd,
+	"sops":       resolveSOPS,
+	"vault":      resolveVault,
+	"vault-http": resolveVaultHTTP,
 }
 
 // WithScheme returns a copy of the resolver with an added/overridden scheme (used by tests
