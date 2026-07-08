@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.19.0](https://github.com/RomanAgaltsev/gantry/compare/v0.18.1...v0.19.0) (2026-07-08)
+
+
+### Features
+
+* **cli:** --output json on status/history/drift/plan (§9.2) ([b372196](https://github.com/RomanAgaltsev/gantry/commit/b372196e4a72afef76f17115117026e41e3e31e2))
+* **cli:** gantry diff between two environments' pins (§9.11) ([0ac36b9](https://github.com/RomanAgaltsev/gantry/commit/0ac36b9349b72c437b0eb98a692370e555a6c186))
+* **cli:** gantry validate — schema, secrets, and pin/config coherence (§9.1) ([c170af4](https://github.com/RomanAgaltsev/gantry/commit/c170af41fe2ea2e35777ae8eefa88c4e370fcc99))
+* **drift:** per-component drift_threshold overriding the global (§9.12) ([a57245b](https://github.com/RomanAgaltsev/gantry/commit/a57245be341c2592493d74a0746e088b88beb54b))
+* **promote:** --only for subset promotion with an unvalidated-unit warning (§9.5) ([62d14f0](https://github.com/RomanAgaltsev/gantry/commit/62d14f0a7945b18ec2d6040404832cf3729f953c))
+* review features ([a9a9eda](https://github.com/RomanAgaltsev/gantry/commit/a9a9eda9aa3ad7d544c3696186877a03cc652e47))
+* **rollback:** --fast symlink flip to the previous release (§9.7) ([5935998](https://github.com/RomanAgaltsev/gantry/commit/5935998815a715a80e8ce1c28e5553abb9230fac))
+* **secrets:** native in-process vault-http backend for the distroless image (§9.13) ([71e1603](https://github.com/RomanAgaltsev/gantry/commit/71e1603dfaa39e795e021ad4ea11e464ea4c9354))
+* **serve:** reload config on SIGHUP without restarting the process (§9.9) ([567f8a7](https://github.com/RomanAgaltsev/gantry/commit/567f8a73018232a6fe364f0a0599fd15fbdd5177))
+* **status:** --watch refresh loop over the status matrix (§9.18) ([c628a20](https://github.com/RomanAgaltsev/gantry/commit/c628a20bafc0ab66407dc3154ab443dc7a30f6db))
+
+
+### Bug Fixes
+
+* TestStatusCmd_WatchRendersUntilCancelled ([ea9ec53](https://github.com/RomanAgaltsev/gantry/commit/ea9ec532a4b1ee00116ce4a0c4363bcf2464ae1d))
+
 ## [0.18.1](https://github.com/RomanAgaltsev/gantry/compare/v0.18.0...v0.18.1) (2026-07-07)
 
 
