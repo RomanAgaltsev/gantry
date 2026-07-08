@@ -44,13 +44,17 @@ func (e *Engine) Drift(ctx context.Context, envName string) (DriftReport, error)
 	if err != nil {
 		return DriftReport{}, err
 	}
-	threshold := e.Cfg.Drift.ThresholdOrDefault()
+	globalThreshold := e.Cfg.Drift.ThresholdOrDefault()
 	now := timeNow()
 
 	var rep DriftReport
 	for _, comp := range e.Cfg.Components {
 		if comp.IsExplicit() {
 			continue // explicit pins have no gantry-known "latest" (B4-D3)
+		}
+		threshold := globalThreshold
+		if comp.DriftThreshold != 0 {
+			threshold = comp.DriftThreshold.Duration() // per-component override (§9.12)
 		}
 		rel, err := e.Forge.LatestRelease(ctx, forge.Component{ID: comp.ID, Project: comp.Project, PinKey: comp.PinKey})
 		if err != nil {
