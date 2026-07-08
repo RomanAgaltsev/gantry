@@ -82,6 +82,18 @@ gantry rollback --env prod
 gantry rollback --env prod --dry-run
 ```
 
+For a symlink-release environment, `--fast` skips the full redeploy and instead flips
+`current` back to the previous release directory (still on disk) and runs `compose up -d`
+without pulling — a near-instant revert:
+
+```bash
+gantry rollback --env prod --fast
+```
+
+`--fast` only works on symlink-release environments; other executors error rather than
+silently doing a slow redeploy. Like a blue-green slot flip, a fast rollback is recorded
+as healthy=unknown (a pointer flip does not re-verify service health).
+
 Because the target comes from the ledger (not the literal parent commit), rollback never
 redeploys a set the ledger recorded as `failed`, and running it again walks further back
 through good states rather than oscillating onto the bad one. If the environment already

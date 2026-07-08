@@ -88,3 +88,44 @@ func TestDeploy_NoPruneWhenKeepZero(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, hasCmd(fr.cmds, "rm -rf"))
 }
+
+// scriptRunner returns a canned value for the "find previous release" list command and ""
+// otherwise, so FastRollback (which reads the list command's stdout) has something to flip to.
+type scriptRunner struct {
+	cmds []string
+	out  func(cmd string) string
+}
+
+func (r *scriptRunner) Run(_ context.Context, cmd string, _ []byte) (string, error) {
+	r.cmds = append(r.cmds, cmd)
+	if r.out != nil {
+		return r.out(cmd), nil
+	}
+	return "", nil
+}
+
+// TestFastRollback_FlipsToPreviousAndUps verifies a fast rollback flips `current` to the
+// previous release dir and runs `compose up -d` without pulling (review §9 item 7).
+func TestFastRollback_FlipsToPreviousAndUps(t *testing.T) {
+	r := &scriptRunner{out: func(cmd string) string {
+		if strings.Contains(cmd, "ls -1t") { // the "find previous release" command
+			return "c1\n"
+		}
+		return ""
+	}}
+	e := &Executor{Runner: r, ProjectDir: "/opt/app", ComposeFiles: []string{"compose.yaml"}}
+	rel, err := e.FastRollback(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "c1", rel)
+	require.True(t, hasCmd(r.cmds, "ln -sfn 'releases/c1'")) // flipped current to the previous release
+	require.True(t, hasCmd(r.cmds, "up -d"))                 // brought it up
+	require.False(t, hasCmd(r.cmds, "pull"))                 // fast: no pull
+}
+
+// TestFastRollback_NoPreviousReleaseErrors fails clearly when there is nothing to flip to.
+func TestFastRollback_NoPreviousReleaseErrors(t *testing.T) {
+	r := &scriptRunner{out: func(string) string { return "" }} // no previous release
+	e := &Executor{Runner: r, ProjectDir: "/opt/app", ComposeFiles: []string{"compose.yaml"}}
+	_, err := e.FastRollback(context.Background())
+	require.ErrorContains(t, err, "no previous release")
+}

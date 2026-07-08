@@ -489,7 +489,13 @@ func greenWord(requireHealthy bool) string {
 }
 
 // RollbackOptions tunes a Rollback run.
-type RollbackOptions struct{ DryRun bool }
+type RollbackOptions struct {
+	DryRun bool
+	// Fast selects a fast symlink-flip rollback to the previous release (no pull). Only an
+	// executor implementing executor.FastRollbacker (symlink-release) honors it; the engine
+	// errors for any other kind rather than silently doing a full redeploy.
+	Fast bool
+}
 
 // RollbackResult reports what a Rollback did.
 type RollbackResult struct {
@@ -514,6 +520,9 @@ func (e *Engine) rollback(ctx context.Context, envName string, ex executor.Execu
 	env, ok := e.Cfg.Environment(envName)
 	if !ok {
 		return RollbackResult{}, fmt.Errorf("environment %q not found", envName)
+	}
+	if opts.Fast {
+		return e.fastRollback(ctx, envName, env.PinFile, ex, by)
 	}
 	if se, ok := ex.(executor.SlotExecutor); ok {
 		return e.slotRollback(ctx, envName, env.PinFile, se, opts, by)
@@ -595,6 +604,38 @@ func (e *Engine) slotRollback(ctx context.Context, envName, pinFile string, se e
 		return RollbackResult{Slot: target, Deployed: true}, err
 	}
 	return RollbackResult{Slot: target, Deployed: true}, nil
+}
+
+// fastRollback flips a symlink-release executor to its previous release dir (no pull) and
+// records the revert against the current head commit, like slotRollback: a pointer flip does
+// not re-verify service health. ToSHA carries the release name the executor flipped to.
+func (e *Engine) fastRollback(ctx context.Context, envName, pinFile string, ex executor.Executor, by string) (RollbackResult, error) {
+	fr, ok := ex.(executor.FastRollbacker)
+	if !ok {
+		return RollbackResult{}, fmt.Errorf("environment %q executor does not support --fast rollback", envName)
+	}
+	rel, err := fr.FastRollback(ctx)
+	if err != nil {
+		return RollbackResult{}, err
+	}
+	head, err := e.Store.LatestCommit(ctx, pinFile)
+	if err != nil && !errors.Is(err, ErrNoHistory) {
+		// A flip need not produce a new commit; record against the head when available and
+		// tolerate a store error rather than failing an otherwise-good revert.
+		head = ""
+	}
+	rec := ledger.Entry{
+		Environment: envName,
+		PinCommit:   head,
+		Result:      ledger.ResultOK,
+		Healthy:     ledger.HealthUnknown, // a pointer flip does not verify service health
+		DeployedAt:  time.Now(),
+		By:          by,
+	}
+	if err := e.Ledger.Record(ctx, rec); err != nil {
+		return RollbackResult{ToSHA: rel, Deployed: true}, err
+	}
+	return RollbackResult{ToSHA: rel, Deployed: true}, nil
 }
 
 // SwitchResult reports a blue-green pointer switch.

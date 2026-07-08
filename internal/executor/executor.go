@@ -35,6 +35,13 @@ type SlotExecutor interface {
 	SwitchTo(ctx context.Context, slot string) error // flip the pointer to slot and reload
 }
 
+// FastRollbacker is an executor that can revert to its previous release without a full
+// redeploy (a symlink-release executor flips `current` to the prior release dir and runs
+// `compose up` without pulling). The engine dispatches --fast rollback to it by type-assertion.
+type FastRollbacker interface {
+	FastRollback(ctx context.Context) (release string, err error)
+}
+
 // RunnerCloser is an executor whose underlying transport can be released between uses. The
 // daemon type-asserts to it and calls CloseRunner after each environment's reconcile so a
 // long-running process does not leak a pooled SSH connection per cycle (C3).

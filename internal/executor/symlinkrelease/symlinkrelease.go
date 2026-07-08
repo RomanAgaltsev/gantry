@@ -5,8 +5,10 @@ package symlinkrelease
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/RomanAgaltsev/gantry/internal/executor"
@@ -77,6 +79,46 @@ func (e *Executor) Deploy(ctx context.Context, p executor.Plan) (executor.Result
 	// The command's own stderr is captured by the runner error if it ever surfaces.
 	_ = e.prune(ctx) //nolint:gosec // best-effort prune; never fails a good deploy
 	return executor.Result{Changed: true, Detail: "symlink-release " + p.Commit}, nil
+}
+
+// FastRollback flips `current` to the immediately-previous release directory (still on disk)
+// and runs `compose up -d` without pulling, for a fast revert (review §9 item 7). It returns
+// the release (commit) it flipped to. It composes the same atomic temp-symlink flip used by
+// Deploy, and reuses the host-side list/drop-current pattern from prune so the active release
+// is never selected as the rollback target.
+func (e *Executor) FastRollback(ctx context.Context) (string, error) {
+	relDir := composessh.ShellQuote(path.Join(e.ProjectDir, releasesDir))
+	curLink := composessh.ShellQuote(path.Join(e.ProjectDir, currentLink))
+	// Newest-first list of releases, drop the current target, take the next: the previous release.
+	list := fmt.Sprintf(`cur=$(basename "$(readlink -f %s)"); ls -1t %s | grep -v -x "$cur" | head -n 1`, curLink, relDir)
+	prev, err := e.Runner.Run(ctx, list, nil)
+	if err != nil {
+		return "", fmt.Errorf("find previous release: %w", err)
+	}
+	prev = strings.TrimSpace(prev)
+	if prev == "" {
+		return "", errors.New("no previous release directory to roll back to")
+	}
+	rel := releasesDir + "/" + prev
+	tmp := path.Join(e.ProjectDir, ".current.tmp")
+	cur := path.Join(e.ProjectDir, currentLink)
+	flip := fmt.Sprintf("ln -sfn %s %s && mv -Tf %s %s",
+		composessh.ShellQuote(rel), composessh.ShellQuote(tmp),
+		composessh.ShellQuote(tmp), composessh.ShellQuote(cur))
+	if _, err := e.Runner.Run(ctx, flip, nil); err != nil {
+		return "", fmt.Errorf("flip current symlink: %w", err)
+	}
+	// Fast: compose up only — the previous release's images are already present, so skip pull.
+	var fileFlags strings.Builder
+	for _, f := range e.ComposeFiles {
+		fmt.Fprintf(&fileFlags, " -f %s", composessh.ShellQuote(f))
+	}
+	up := fmt.Sprintf("cd %s && docker compose%s --env-file %s up -d",
+		composessh.ShellQuote(e.ProjectDir), fileFlags.String(), composessh.ShellQuote(envInRelease))
+	if _, err := e.Runner.Run(ctx, up, nil); err != nil {
+		return "", fmt.Errorf("compose up: %w", err)
+	}
+	return prev, nil
 }
 
 // prune removes release directories beyond the newest Keep, never the one `current` points
