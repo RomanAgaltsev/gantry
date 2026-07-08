@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.19.1](https://github.com/RomanAgaltsev/gantry/compare/v0.19.0...v0.19.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* **cli:** reject an unknown --output value instead of falling back to text (F2) ([29b3e59](https://github.com/RomanAgaltsev/gantry/commit/29b3e59ecd1c291ba1fadc64f715b45b5fc3933f))
+* review findings ([14e244a](https://github.com/RomanAgaltsev/gantry/commit/14e244ae625b78a324f421e878f136bc9c137a04))
+
 ## [0.19.0](https://github.com/RomanAgaltsev/gantry/compare/v0.18.1...v0.19.0) (2026-07-08)
 
 
