@@ -193,15 +193,17 @@ An environment must set **either** `track` **or** `promote_from`; setting neithe
 validation error. If `promote_from` names an environment that does not exist, that is
 also an error.
 
-> **Slice 1 note:** `promote_from` is modeled and validated, but its execution is
-> **not** implemented yet — `sync` supports track-mode only. Promotion is planned for
-> a later slice.
+> **Note:** a `promote_from` environment is not filled by `sync` (which is forge/track-driven).
+> Its pins are copied from the named upstream environment by
+> `gantry promote --from <upstream> --to <this env>`, which reads the upstream pin file *as
+> committed at the gated SHA* (a frozen, TOCTOU-safe promotion). The `promote_from` value also
+> drives an advisory promotion-DAG warning when you promote along an unexpected edge.
 
 ### `executor`
 
 | Field           | Type     | Required | Description |
 |-----------------|----------|----------|-------------|
-| `kind`          | string   | yes      | Deploy backend. Slice 1 supports `compose-over-ssh` only; any other value is a validation error. |
+| `kind`          | string   | yes      | Deploy backend: `compose-over-ssh`, `symlink-release`, or `blue-green`. Any other value is a validation error. |
 | `connection`    | string   | yes      | Name of a `connections` entry. Must exist, else a validation error. |
 | `project_dir`   | string   | yes      | Directory on the target host that holds the compose project. |
 | `compose_files` | []string | no       | Compose files passed as `-f` flags. |
