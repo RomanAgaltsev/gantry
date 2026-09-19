@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.19.2](https://github.com/RomanAgaltsev/gantry/compare/v0.19.1...v0.19.2) (2026-09-19)
+
+
+### Bug Fixes
+
+* clear govulncheck — bump x/crypto to v0.57.0 and Go to 1.27 ([59d3dfd](https://github.com/RomanAgaltsev/gantry/commit/59d3dfd630e5c30463764d1109895cca54398d32))
+* **deps:** bump golang.org/x/crypto to v0.57.0 ([e3301b5](https://github.com/RomanAgaltsev/gantry/commit/e3301b5436849028839bade4cde08efbc940c84f))
+* require Go 1.27 ([17ca34e](https://github.com/RomanAgaltsev/gantry/commit/17ca34e3b54fa5e5a15d51cdb1db4bde1d3a8ec9))
+
 ## [0.19.1](https://github.com/RomanAgaltsev/gantry/compare/v0.19.0...v0.19.1) (2026-07-08)
 
 
