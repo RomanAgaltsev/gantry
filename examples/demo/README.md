@@ -29,6 +29,149 @@ It also includes an explicit-pin component to show how a third-party image
 - For an actual deploy: SSH access to the host in `connections.app-host`, with the
   private key and `known_hosts` available at the `${file:...}` paths.
 
+## Run it locally
+
+Everything below describes a real fleet. **[`stand/`](stand/) makes this config true
+locally** — a fake GitLab, a Docker-in-Docker host reachable over SSH, and the published
+gantry image, wired so `gitlab.example.com`, `192.0.2.10` and the `/run/secrets/…` paths in
+`gantry.yaml` all resolve. The config is run **unmodified**: it is the artifact under proof,
+and `git diff --exit-code examples/demo/gantry.yaml` is clean after a full demo run.
+
+```bash
+task demo:up
+```
+
+That generates an SSH keypair, a demo CA and a `gitlab.example.com` certificate,
+`known_hosts`, and a scratch git tree for pin commits; then builds and starts the stand.
+Everything generated is gitignored, so `git status` stays clean.
+
+From then on every `gantry` command in this document runs as:
+
+```bash
+task demo:gantry -- <the same arguments>
+```
+
+with **no `--config`**. The shipped `gantry.yaml` is mounted into the container's working
+directory and found by gantry's default config path. That is deliberate: gantry roots the
+pin store and the ledger at the *config file's* directory, not at the working directory, so
+pointing `--config` elsewhere would put pin files next to your checkout.
+
+Other targets: `task demo:down`, `task demo:reset` (discards published releases),
+`task demo:logs`, `task demo:host` (a shell on the deploy target), and
+`task demo:release -- <component> <version> [image_repository] [image_tag] [built_at]` to
+publish into the fake forge.
+
+**Requires** Docker and a POSIX shell (Git Bash, WSL, or any Unix). Nothing here runs in
+`task ci`: the stand asserts nothing and is driven by hand.
+
+> **Slice 1 is the `test` environment only.** `gantry.yaml` also declares `prod`
+> (symlink-release) and `front` (blue-green); neither host layout is built by the stand, so
+> `promote` and `rollback` are out of scope — see steps 6 and 7 of the walkthrough.
+
+### The six scenarios
+
+Each was run against the stand. The output below is what it printed.
+
+**1. Cold start** — `plan`, then `sync`.
+
+```
+$ task demo:gantry -- plan --env test
+API_IMAGE:  -> traefik/whoami:v1.10.2
+WEB_IMAGE:  -> nginx:1.25
+missing pins (in config, not in pin file): API_IMAGE, WEB_IMAGE
+
+$ task demo:gantry -- sync --env test
+msg="pin written" env=test commit=32d596e changes=2
+msg="deploy recorded" env=test by=sync result=ok commit=32d596e
+deployed
+```
+
+Three containers are then up on the target, and the pin file is committed in the scratch
+tree (`32d596e chore(test): pin 2 component(s)`, followed by a ledger commit).
+
+`POSTGRES_IMAGE` is seeded by `setup.sh` rather than resolved. It is explicit-pin, so
+gantry never writes it — and without a value the first deploy fails with *"service postgres
+has neither an image nor a build context specified"*.
+
+**2. A new release** — publish, then watch it land.
+
+```
+$ task demo:release -- api 1.5.0 traefik/whoami v1.11.0
+$ task demo:gantry -- status --env test
+API_IMAGE            pinned=traefik/whoami:v1.10.2   latest=traefik/whoami:v1.11.0
+WEB_IMAGE            pinned=nginx:1.25               latest=nginx:1.25
+POSTGRES_IMAGE       pinned=postgres:16.4            latest=(untracked)
+
+$ task demo:gantry -- plan --env test
+API_IMAGE: traefik/whoami:v1.10.2 -> traefik/whoami:v1.11.0
+
+$ task demo:gantry -- sync --env test
+deployed
+```
+
+**3. Drift** — a release published more than `drift.threshold` (7d) ago and not deployed.
+
+```
+$ task demo:release -- api 1.6.0 traefik/whoami v1.12.0 2026-09-09T10:00:00Z
+$ task demo:gantry -- drift --all
+DRIFT test/api: pinned traefik/whoami:v1.11.0, latest 1.6.0 published 10d ago (>7d)
+DRIFT front/api: pinned (unpinned), latest 1.6.0 published 10d ago (>7d)
+```
+
+Exit code **3**, which is what makes it usable as a CI gate.
+
+**4. Failed verification → rollback** — publish an image that cannot stay up.
+
+```
+$ task demo:release -- api 1.7.0 alpine 3
+$ task demo:gantry -- deploy --env test
+msg="deploy recorded" env=test by=deploy result=failed
+msg="deploy recorded" env=test by=auto-rollback result=ok
+verify failed for test; rolled back to 7938b64
+gantry: verify failed, rolled back: verify "test": service api is "restarting", not running
+```
+
+The pin returns to `traefik/whoami:v1.11.0` and the container comes back healthy.
+
+> **Use `deploy`, not `sync`, to see this.** The deployed services carry
+> `restart: unless-stopped`, so a container that exits is restarted rather than left dead.
+> `sync` runs `compose-ps` within seconds of `up -d` and can observe the service while it is
+> still `running`, reporting success. Once the container is visibly looping, `deploy`
+> re-verifies and fails reliably.
+
+**5. The explicit pin** — operator-managed, and the poller leaves it alone.
+
+```
+$ vi examples/demo/stand/.work/.env.versions.test   # POSTGRES_IMAGE=postgres:16.3
+$ git -C examples/demo/stand/.work commit -am "ops: pin postgres to 16.3"
+$ task demo:gantry -- deploy --env test
+deployed 3 pin(s) to test        # postgres is now 16.3
+
+$ task demo:gantry -- sync --env test
+up to date; no changes           # POSTGRES_IMAGE untouched
+```
+
+**The edit must be committed.** The pin store is git-backed, so an uncommitted change to the
+pin file is invisible to gantry — `deploy` will report success having deployed the
+*committed* value.
+
+**6. The daemon** — reconciles unattended and holds a lock.
+
+```
+$ task demo:gantry -- serve --interval 15s      # in one terminal
+$ task demo:release -- api 1.9.0 traefik/whoami v1.10.1
+  msg="pin written" env=test commit=0dfb9dd changes=1
+  msg="deploy recorded" env=test by=sync result=ok commit=0dfb9dd
+
+$ task demo:gantry -- sync --env test           # in another
+gantry: a gantry daemon is reconciling this repo (.gantry/serve.lock); stop it or wait
+```
+
+> **`serve` has no `--env` flag** — it reconciles *every* environment in the config. In
+> slice 1 that means it also tries `front` each interval and logs
+> `reconcile failed env=front error="deploy \"front\": write blue env: …"`. That noise is
+> expected here; it is the blue-green host layout being absent, not a gantry fault.
+
 ## Walkthrough
 
 ```bash
@@ -48,9 +191,13 @@ gantry history --env test --config examples/demo/gantry.yaml
 gantry status --env test --config examples/demo/gantry.yaml
 
 # 6. Snapshot the green test set into prod
+#    NOT AVAILABLE ON THE LOCAL STAND: `prod` is a symlink-release environment on
+#    prod-host, and the stand builds the `test` target only. Run this against a real
+#    fleet, or expect it to fail resolving connections.prod-host.
 gantry promote --from test --to prod --config examples/demo/gantry.yaml
 
 # 7. Revert prod to its previous set
+#    NOT AVAILABLE ON THE LOCAL STAND, for the same reason as step 6.
 gantry rollback --env prod --config examples/demo/gantry.yaml
 ```
 
