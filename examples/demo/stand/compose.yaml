@@ -1,0 +1,73 @@
+# The demo stand: three services on one network whose aliases and addresses make
+# the literals in examples/demo/gantry.yaml true, so the shipped config runs
+# unmodified. Nothing here edits that file -- it is the artifact under proof.
+name: gantry-demo
+
+networks:
+  demo:
+    ipam:
+      config:
+        - subnet: 192.0.2.0/24
+
+services:
+  # gitlab.example.com. The alias is what makes the config's base_url resolve.
+  forge:
+    build:
+      context: ../../..
+      dockerfile: examples/demo/stand/forge/Dockerfile
+    networks:
+      demo:
+        aliases: [gitlab.example.com]
+    # Published so `task demo:release` can drive the control endpoint from the
+    # workstation; gantry itself reaches the forge over the demo network.
+    ports:
+      - "18443:443"
+    volumes:
+      - ./secrets:/run/secrets:ro
+    restart: unless-stopped
+
+  # 192.0.2.10. The deployment target: dockerd plus sshd, reachable as `deploy`.
+  app-host:
+    build: ./app-host
+    privileged: true
+    networks:
+      demo:
+        ipv4_address: 192.0.2.10
+    volumes:
+      - ./secrets:/run/secrets:ro
+    restart: unless-stopped
+
+  # The published gantry image, run on demand rather than kept up. `run --rm`
+  # rather than `exec`, because the image is distroless with no shell to enter.
+  gantry:
+    build:
+      context: ../../..
+      dockerfile: Dockerfile
+    networks: [demo]
+    working_dir: /work
+    environment:
+      GANTRY_FORGE_TOKEN: demo-token
+      # The shipped config's notification channel reads these two. An unset
+      # ${env:...} is a hard error during config resolution, not a skipped
+      # notification, so they have to exist even for a command that sends none.
+      GANTRY_WEBHOOK_URL: https://gitlab.example.com/_control/notify
+      GANTRY_TELEGRAM_CHAT_ID: demo-chat
+      # How a distroless image trusts the demo CA: Go's verifier honours
+      # SSL_CERT_FILE, and there is no update-ca-certificates to run.
+      SSL_CERT_FILE: /run/secrets/demo-ca.crt
+    volumes:
+      # The scratch git tree gantry commits pin files into. Never your checkout.
+      - ./.work:/work
+      # The shipped config, mounted read-only INTO that scratch tree.
+      #
+      # It lives here rather than being read at /repo because gantry roots the pin
+      # store and the ledger at filepath.Dir(--config) (internal/cli/deps.go), not
+      # at the working directory. Pointing --config into /repo would put pin files
+      # beside the read-only checkout instead of in the scratch tree. With the
+      # default --config of "gantry.yaml" and working_dir /work, both resolve to
+      # /work -- and no container path has to be typed on the command line.
+      - ../gantry.yaml:/work/gantry.yaml:ro
+      # The checkout itself, read-only, for reference from inside the stand.
+      - ../../..:/repo:ro
+      - ./secrets:/run/secrets:ro
+    profiles: [cli]
