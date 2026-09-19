@@ -14,6 +14,9 @@ vars:
 
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  DEMO_DIR: "examples/demo/stand"
+  DEMO_COMPOSE: "docker compose -f examples/demo/stand/compose.yaml"
+
   LDFLAGS: >-
     -s -w
     -X github.com/RomanAgaltsev/gantry/internal/cli.Version={{.VERSION}}
@@ -98,3 +101,65 @@ tasks:
       - task: vet
       - task: lint
       - task: test
+
+  # --- demo stand -------------------------------------------------------------
+  # A manual stand for examples/demo/gantry.yaml. Nothing here runs in `task ci`:
+  # it asserts nothing and is driven by hand. See examples/demo/README.md.
+
+  demo:setup:
+    desc: generate the demo stand's keys, certificate, known_hosts and scratch tree
+    cmds:
+      - sh {{.DEMO_DIR}}/setup.sh
+
+  demo:up:
+    desc: bring the demo stand up
+    cmds:
+      - task: demo:setup
+      - "{{.DEMO_COMPOSE}} --profile cli build"
+      - "{{.DEMO_COMPOSE}} up -d"
+
+  demo:down:
+    desc: tear the demo stand down, including its volumes
+    cmds:
+      - "{{.DEMO_COMPOSE}} --profile cli down -v"
+
+  demo:reset:
+    desc: tear the stand down and bring it back up, discarding published releases
+    cmds:
+      - task: demo:down
+      - task: demo:up
+
+  demo:logs:
+    desc: follow the demo stand's logs
+    cmds:
+      - "{{.DEMO_COMPOSE}} logs -f"
+
+  demo:host:
+    desc: open a shell on the demo app-host
+    cmds:
+      - "{{.DEMO_COMPOSE}} exec app-host sh"
+
+  demo:gantry:
+    desc: 'run gantry against the stand: task demo:gantry -- plan --env test'
+    cmds:
+      # `run --rm`, not `exec`: the shipped image is distroless with no shell, so
+      # there is nothing to exec into and no session to hold.
+      - "{{.DEMO_COMPOSE}} run --rm gantry {{.CLI_ARGS}}"
+
+  demo:release:
+    desc: 'publish a release to the fake forge: task demo:release -- <component> <version> [image_repository] [image_tag]'
+    cmds:
+      - |
+        set -- {{.CLI_ARGS}}
+        comp="$1"; ver="$2"; repo="${3:-traefik/whoami}"; tag="${4:-v$2}"
+        if [ -z "$comp" ] || [ -z "$ver" ]; then
+          echo 'usage: task demo:release -- <component> <version> [image_repository] [image_tag]' >&2
+          exit 2
+        fi
+        curl -sS --fail-with-body \
+          --cacert {{.DEMO_DIR}}/secrets/demo-ca.crt \
+          --resolve gitlab.example.com:18443:127.0.0.1 \
+          -H 'Content-Type: application/json' \
+          -d "{\"project\":\"demo/$comp\",\"version\":\"$ver\",\"image_repository\":\"$repo\",\"image_tag\":\"$tag\"}" \
+          https://gitlab.example.com:18443/_control/release
+        echo

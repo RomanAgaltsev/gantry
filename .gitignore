@@ -38,3 +38,7 @@ go.work.sum
 # OS
 .DS_Store
 Thumbs.db
+
+# gantry demo stand (generated: keys, certificates, scratch git tree)
+examples/demo/stand/secrets/
+examples/demo/stand/.work/

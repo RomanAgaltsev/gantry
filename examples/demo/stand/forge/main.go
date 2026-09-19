@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -18,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // metadataMarker matches metadata_marker in examples/demo/gantry.yaml. That config is
@@ -197,6 +199,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v4/projects/", s.handleReleases)
 	mux.HandleFunc("POST /_control/release", s.handleControl)
+	mux.HandleFunc("POST /_control/notify", handleNotify)
 
 	srv := &http.Server{
 		Addr:              *addr,
@@ -298,4 +301,34 @@ func (s *store) handleControl(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(rel); err != nil {
 		log.Printf("encode control response: %v", err)
 	}
+}
+
+// sanitizeForLog flattens a payload onto one line, so a body cannot forge log
+// entries by embedding newlines or control characters (gosec G706).
+func sanitizeForLog(b []byte) string {
+	out := make([]rune, 0, len(b))
+	for _, r := range string(b) {
+		if unicode.IsPrint(r) {
+			out = append(out, r)
+			continue
+		}
+		out = append(out, ' ')
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// handleNotify is a sink for the demo config's webhook channel.
+//
+// It exists because examples/demo/gantry.yaml declares a webhook notification and
+// gantry resolves ${env:GANTRY_WEBHOOK_URL} on every command. Without somewhere for
+// the call to land, every deploy logs "notification failed" -- a warning rather than
+// an error, but noise in a stand whose whole purpose is showing real behaviour.
+func handleNotify(w http.ResponseWriter, r *http.Request) {
+	b, err := io.ReadAll(io.LimitReader(r.Body, 8<<10))
+	if err != nil {
+		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	log.Printf("notification: %s", sanitizeForLog(b))
+	w.WriteHeader(http.StatusNoContent)
 }
