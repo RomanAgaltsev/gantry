@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.20.0](https://github.com/RomanAgaltsev/gantry/compare/v0.19.1...v0.20.0) (2026-09-19)
+
+
+### Features
+
+* **demo:** compose stand that runs the shipped demo config ([803b16b](https://github.com/RomanAgaltsev/gantry/commit/803b16be6f2dd1a67c50f0f858ac81b6a0e3c43d))
+* **demo:** dind app-host reachable over ssh ([50c5585](https://github.com/RomanAgaltsev/gantry/commit/50c5585ee73ed51618b2b8d35a8cb861af053607))
+* **demo:** fake GitLab forge with a release control endpoint ([d5b1416](https://github.com/RomanAgaltsev/gantry/commit/d5b1416cecd7330baa9fd258d76d3d309a224f60))
+
 ## [0.19.1](https://github.com/RomanAgaltsev/gantry/compare/v0.19.0...v0.19.1) (2026-07-08)
 
 
