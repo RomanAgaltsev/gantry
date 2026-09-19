@@ -142,7 +142,8 @@ func TestPromote_OnlySubset(t *testing.T) {
 	led := &fakeLedger{entries: []ledger.Entry{{Environment: "test", PinCommit: "g1", Result: "ok"}}}
 
 	res, err := (&Engine{Cfg: promoteCfg(), Store: store, Ledger: led}).Promote(
-		context.Background(), "test", "prod", "", ex, nil, PromoteOptions{Only: []string{"A_IMAGE"}})
+		context.Background(), "test", "prod", "", ex, nil, PromoteOptions{Only: []string{"A_IMAGE"}},
+	)
 	require.NoError(t, err)
 	require.True(t, res.Deployed)
 	// Only A advanced to v2; B carried forward from prod's current v1.
@@ -159,6 +160,7 @@ func TestPromote_OnlyMissingKeyErrors(t *testing.T) {
 	led := &fakeLedger{entries: []ledger.Entry{{Environment: "test", PinCommit: "g1", Result: "ok"}}}
 
 	_, err := (&Engine{Cfg: promoteCfg(), Store: store, Ledger: led}).Promote(
-		context.Background(), "test", "prod", "", &fakeExec{}, nil, PromoteOptions{Only: []string{"NOPE"}})
+		context.Background(), "test", "prod", "", &fakeExec{}, nil, PromoteOptions{Only: []string{"NOPE"}},
+	)
 	require.ErrorContains(t, err, "not present in the promoted pin set")
 }
