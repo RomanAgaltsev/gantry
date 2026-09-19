@@ -1,8 +1,8 @@
 version: "3"
 
 vars:
-  GO_VERSION: "1.26"
-  GOLANGCI_LINT_VERSION: "v2.12.2"
+  GO_VERSION: "1.27"
+  GOLANGCI_LINT_VERSION: "v2.13.2"
   GCI_VERSION: "v0.14.0"
   GOFUMPT_VERSION: "v0.10.0"
 
@@ -42,7 +42,11 @@ tasks:
     cmds:
       - GOBIN={{.BIN_DIR}} go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}}
     status:
-      - ls {{.GOLANGCI_LINT}} >/dev/null 2>&1
+      # Version-aware on purpose. A bare existence check means bumping
+      # GOLANGCI_LINT_VERSION silently does nothing on any machine that already
+      # has the binary -- CI would lint with the new version while everyone
+      # locally kept the old one.
+      - '{{.GOLANGCI_LINT}} --version 2>/dev/null | grep -q "{{trimPrefix "v" .GOLANGCI_LINT_VERSION}}"'
 
   setup:
     desc: install all dev tools

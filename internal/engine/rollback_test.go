@@ -128,7 +128,8 @@ func TestRollback_FastDispatchesToFastRollbacker(t *testing.T) {
 	led := &fakeLedger{}
 
 	res, err := (&Engine{Cfg: rollbackCfgRoll(), Store: store, Ledger: led}).Rollback(
-		context.Background(), "prod", ex, nil, RollbackOptions{Fast: true})
+		context.Background(), "prod", ex, nil, RollbackOptions{Fast: true},
+	)
 	require.NoError(t, err)
 	require.True(t, ex.flipped)
 	require.True(t, res.Deployed)
@@ -143,6 +144,7 @@ func TestRollback_FastDispatchesToFastRollbacker(t *testing.T) {
 func TestRollback_FastUnsupportedExecutorErrors(t *testing.T) {
 	store := &fakeStore{headSHA: "cur"}
 	_, err := (&Engine{Cfg: rollbackCfgRoll(), Store: store, Ledger: &fakeLedger{}}).Rollback(
-		context.Background(), "prod", &fakeExec{}, nil, RollbackOptions{Fast: true})
+		context.Background(), "prod", &fakeExec{}, nil, RollbackOptions{Fast: true},
+	)
 	require.ErrorContains(t, err, "does not support --fast")
 }

@@ -136,7 +136,8 @@ func (e *Executor) prune(ctx context.Context) error {
 	cmd := fmt.Sprintf(
 		`cur=$(basename "$(readlink -f %s)"); `+
 			`ls -1t %s | grep -v -x "$cur" | tail -n +%d | while read d; do rm -rf %s/"$d"; done`,
-		curLink, relDir, e.Keep+1, relDir)
+		curLink, relDir, e.Keep+1, relDir,
+	)
 	_, err := e.Runner.Run(ctx, cmd, nil)
 	return err
 }

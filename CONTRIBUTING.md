@@ -10,7 +10,7 @@ Thanks for contributing! gantry is a single-module Go CLI
 
 ## Prerequisites
 
-- Go 1.26+
+- Go 1.27+
 - [Task](https://taskfile.dev): `go install github.com/go-task/task/v3/cmd/task@latest`
 
 `task setup` installs the pinned dev tools (golangci-lint, gofumpt, gci) into `./bin`.
