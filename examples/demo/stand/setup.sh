@@ -62,8 +62,15 @@ if [ ! -d "$WORK/.git" ]; then
 	git -C "$WORK" init -q
 	git -C "$WORK" config user.name "gantry demo"
 	git -C "$WORK" config user.email "demo@example.invalid"
+	# Pin files are dotenv files read by `docker compose --env-file` on Linux. With
+	# a global core.autocrlf=true -- the Windows default -- git would rewrite them
+	# with CRLF, and every value would carry a trailing carriage return.
+	git -C "$WORK" config core.autocrlf false
+	# gantry.yaml is bind-mounted in from examples/demo/, and .gantry/ holds the
+	# serve lock. Neither belongs in the scratch tree's history.
+	printf 'gantry.yaml\n.gantry/\n' > "$WORK/.gitignore"
 	printf '# gantry demo scratch tree\n\nPin files committed by demo runs land here.\n' > "$WORK/README.md"
-	git -C "$WORK" add README.md
+	git -C "$WORK" add .gitignore README.md
 
 	# POSTGRES_IMAGE is an explicit pin: examples/demo/gantry.yaml declares
 	# `source: { pin: explicit }` for it, so gantry never asks the forge and never

@@ -147,19 +147,30 @@ tasks:
       - "{{.DEMO_COMPOSE}} run --rm gantry {{.CLI_ARGS}}"
 
   demo:release:
-    desc: 'publish a release to the fake forge: task demo:release -- <component> <version> [image_repository] [image_tag]'
+    desc: 'publish a release to the fake forge: task demo:release -- <component> <version> [image_repository] [image_tag] [built_at]'
     cmds:
       - |
         set -- {{.CLI_ARGS}}
-        comp="$1"; ver="$2"; repo="${3:-traefik/whoami}"; tag="${4:-v$2}"
+        comp="$1"; ver="$2"; repo="${3:-traefik/whoami}"; tag="${4:-v$2}"; built="$5"
         if [ -z "$comp" ] || [ -z "$ver" ]; then
-          echo 'usage: task demo:release -- <component> <version> [image_repository] [image_tag]' >&2
+          echo 'usage: task demo:release -- <component> <version> [image_repository] [image_tag] [built_at]' >&2
           exit 2
         fi
+        # built_at is RFC3339 and optional, defaulting to now in the forge. It is
+        # settable because the drift scenario needs a release dated past the 7d
+        # threshold, and there is no other way to produce one.
+        body="{\"project\":\"demo/$comp\",\"version\":\"$ver\",\"image_repository\":\"$repo\",\"image_tag\":\"$tag\""
+        if [ -n "$built" ]; then body="$body,\"built_at\":\"$built\""; fi
+        body="$body}"
+        # --ssl-no-revoke is load-bearing on Windows: the curl Git Bash ships is
+        # Schannel-backed, and Schannel cannot check revocation for the demo CA
+        # (a local CA publishes no CRL or OCSP URL), so it rejects the chain with
+        # exit 60. The flag is a no-op on OpenSSL-backed curl.
         curl -sS --fail-with-body \
           --cacert {{.DEMO_DIR}}/secrets/demo-ca.crt \
+          --ssl-no-revoke \
           --resolve gitlab.example.com:18443:127.0.0.1 \
           -H 'Content-Type: application/json' \
-          -d "{\"project\":\"demo/$comp\",\"version\":\"$ver\",\"image_repository\":\"$repo\",\"image_tag\":\"$tag\"}" \
+          -d "$body" \
           https://gitlab.example.com:18443/_control/release
         echo
