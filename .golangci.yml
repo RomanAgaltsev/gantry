@@ -148,7 +148,10 @@ formatters:
     - gci
   settings:
     gofumpt:
-      extra-rules: true
+      # `extra-rules: true` was deprecated in golangci-lint 2.13 in favour of
+      # the explicit `extra.group-params`.
+      extra:
+        group-params: true
     gci:
       sections:
         - standard

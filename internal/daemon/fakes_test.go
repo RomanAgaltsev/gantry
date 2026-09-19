@@ -70,6 +70,7 @@ func newFakeStore() *fakeStore { return &fakeStore{} }
 
 func (s *fakeStore) Read(context.Context, string) (pin.Set, error)           { return s.cur, nil }
 func (s *fakeStore) ReadAt(context.Context, string, string) (pin.Set, error) { return pin.Set{}, nil }
+
 func (s *fakeStore) WriteAndCommit(_ context.Context, _ string, set pin.Set, _ string) (string, error) {
 	s.committed = set
 	s.headSHA = "newsha"
