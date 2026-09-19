@@ -1,0 +1,17 @@
+# What gantry deploys. It references the pin keys from examples/demo/gantry.yaml
+# -- API_IMAGE, WEB_IMAGE, POSTGRES_IMAGE -- and nothing else.
+#
+# No bind mounts: a bind mount here resolves inside the dind daemon, not on your
+# workstation, and would quietly behave differently from a real host.
+services:
+  api:
+    image: ${API_IMAGE}
+    restart: unless-stopped
+  web:
+    image: ${WEB_IMAGE}
+    restart: unless-stopped
+  postgres:
+    image: ${POSTGRES_IMAGE}
+    environment:
+      POSTGRES_PASSWORD: demo
+    restart: unless-stopped
