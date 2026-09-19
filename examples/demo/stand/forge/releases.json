@@ -1,0 +1,22 @@
+{
+  "demo/api": [
+    {
+      "tag_name": "v1.4.0",
+      "component": "api",
+      "semver_version": "1.4.0",
+      "image_repository": "traefik/whoami",
+      "image_tag": "v1.10.2",
+      "built_at": "2026-09-19T10:00:00Z"
+    }
+  ],
+  "demo/web": [
+    {
+      "tag_name": "v2.1.0",
+      "component": "web",
+      "semver_version": "2.1.0",
+      "image_repository": "nginx",
+      "image_tag": "1.25",
+      "built_at": "2026-09-19T10:00:00Z"
+    }
+  ]
+}
